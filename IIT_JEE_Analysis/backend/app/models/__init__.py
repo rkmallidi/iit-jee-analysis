@@ -1,0 +1,14 @@
+"""Import all models so SQLAlchemy metadata is fully populated for Alembic."""
+from app.models.user import User, Role, UserRole  # noqa: F401
+from app.models.branch import Branch  # noqa: F401
+from app.models.program import Program  # noqa: F401
+from app.models.class_ import Class  # noqa: F401
+from app.models.section import Section  # noqa: F401
+from app.models.mapping import (  # noqa: F401
+    FacultySubject,
+    DeanBranch,
+    PrincipalBranch,
+    BranchProgram,
+    BranchSection,
+    FacultySection,
+)
