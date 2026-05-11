@@ -37,7 +37,7 @@ def seed_roles(db: Session) -> None:
 
 def _user_query():
     return select(User).options(
-        selectinload(User.user_roles).selectinload(UserRole.role)
+        selectinload(User.user_roles).selectinload("role")
     )
 
 
