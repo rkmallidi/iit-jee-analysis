@@ -28,13 +28,17 @@ admin_only = Depends(require_roles(RoleName.ADMIN))
 
 
 # ----- Faculty Subject -----
+@router.get("/faculty-subjects/{user_id}", response_model=list[FacultySubjectOut])
+def list_faculty_subjects(user_id: int, db: DbSession, _: CurrentUser):
+    return crud.get_faculty_subjects(db, user_id)
+
 @router.post("/faculty-subject", response_model=FacultySubjectOut, dependencies=[admin_only])
 def set_faculty_subject(data: FacultySubjectCreate, db: DbSession):
     return crud.set_faculty_subject(db, data.user_id, data.subject)
 
-@router.delete("/faculty-subject/{user_id}", status_code=204, dependencies=[admin_only])
-def delete_faculty_subject(user_id: int, db: DbSession):
-    fs = crud.get_faculty_subject(db, user_id)
+@router.delete("/faculty-subject/{id}", status_code=204, dependencies=[admin_only])
+def delete_faculty_subject(id: int, db: DbSession):
+    fs = crud.get_faculty_subject_by_id(db, id)
     if not fs: raise HTTPException(404, "Not found")
     crud.delete_faculty_subject(db, fs)
 
@@ -73,12 +77,16 @@ def remove_principal_branch(id: int, db: DbSession):
 
 # ----- Branch ↔ Program -----
 @router.get("/branch-programs", response_model=list[BranchProgramOut])
-def list_branch_programs(db: DbSession, _: CurrentUser, branch_id: int | None = None):
-    return crud.get_branch_programs(db, branch_id=branch_id)
+def list_branch_programs(
+    db: DbSession, _: CurrentUser,
+    academic_year_id: int | None = None,
+    branch_id: int | None = None,
+):
+    return crud.get_branch_programs(db, academic_year_id=academic_year_id, branch_id=branch_id)
 
 @router.post("/branch-programs", response_model=BranchProgramOut, status_code=201, dependencies=[admin_only])
 def assign_branch_program(data: BranchProgramCreate, db: DbSession):
-    return crud.assign_branch_program(db, data.branch_id, data.program_id)
+    return crud.assign_branch_program(db, data.academic_year_id, data.branch_id, data.program_id)
 
 @router.delete("/branch-programs/{id}", status_code=204, dependencies=[admin_only])
 def remove_branch_program(id: int, db: DbSession):
@@ -91,13 +99,17 @@ def remove_branch_program(id: int, db: DbSession):
 @router.get("/branch-sections", response_model=list[BranchSectionOut])
 def list_branch_sections(
     db: DbSession, _: CurrentUser,
-    branch_id: int | None = None, program_id: int | None = None
+    academic_year_id: int | None = None,
+    branch_id: int | None = None,
+    program_id: int | None = None,
 ):
-    return crud.get_branch_sections(db, branch_id=branch_id, program_id=program_id)
+    return crud.get_branch_sections(db, academic_year_id=academic_year_id, branch_id=branch_id, program_id=program_id)
 
 @router.post("/branch-sections", response_model=BranchSectionOut, status_code=201, dependencies=[admin_only])
 def create_branch_section(data: BranchSectionCreate, db: DbSession):
-    return crud.create_branch_section(db, data.branch_id, data.program_id, data.class_id, data.section_id)
+    return crud.create_branch_section(
+        db, data.academic_year_id, data.branch_id, data.program_id, data.class_id, data.section_id
+    )
 
 @router.delete("/branch-sections/{id}", status_code=204, dependencies=[admin_only])
 def delete_branch_section(id: int, db: DbSession):
@@ -114,7 +126,7 @@ def list_faculty_sections(db: DbSession, _: CurrentUser, user_id: int | None = N
 @router.post("/faculty-sections", response_model=FacultySectionOut, status_code=201, dependencies=[admin_only])
 def assign_faculty_section(data: FacultySectionCreate, db: DbSession):
     try:
-        return crud.assign_faculty_section(db, data.user_id, data.branch_section_id)
+        return crud.assign_faculty_section(db, data.user_id, data.branch_section_id, data.subject)
     except ValueError as e:
         raise HTTPException(404, str(e))
 
@@ -127,22 +139,22 @@ def remove_faculty_section(id: int, db: DbSession):
 
 # ----- Overview -----
 @router.get("/overview/faculty/{user_id}", response_model=FacultyOverview)
-def faculty_overview(user_id: int, db: DbSession, _: CurrentUser):
+def faculty_overview(user_id: int, db: DbSession, _: CurrentUser, academic_year_id: int | None = None):
     try:
-        return crud.get_faculty_overview(db, user_id)
+        return crud.get_faculty_overview(db, user_id, academic_year_id=academic_year_id)
     except ValueError as e:
         raise HTTPException(404, str(e))
 
 @router.get("/overview/program/{program_id}", response_model=ProgramOverview)
-def program_overview(program_id: int, db: DbSession, _: CurrentUser):
+def program_overview(program_id: int, db: DbSession, _: CurrentUser, academic_year_id: int | None = None):
     try:
-        return crud.get_program_overview(db, program_id)
+        return crud.get_program_overview(db, program_id, academic_year_id=academic_year_id)
     except ValueError as e:
         raise HTTPException(404, str(e))
 
 @router.get("/overview/branch/{branch_id}", response_model=BranchOverview)
-def branch_overview(branch_id: int, db: DbSession, _: CurrentUser):
+def branch_overview(branch_id: int, db: DbSession, _: CurrentUser, academic_year_id: int | None = None):
     try:
-        return crud.get_branch_overview(db, branch_id)
+        return crud.get_branch_overview(db, branch_id, academic_year_id=academic_year_id)
     except ValueError as e:
         raise HTTPException(404, str(e))

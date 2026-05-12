@@ -5,6 +5,7 @@ from typing import Optional
 from pydantic import BaseModel
 
 from app.models.mapping import SubjectName
+from app.schemas.academic_year import AcademicYearOut
 from app.schemas.branch import BranchOut
 from app.schemas.class_ import ClassOut
 from app.schemas.program import ProgramOut
@@ -67,15 +68,18 @@ class PrincipalBranchOut(BaseModel):
 # ----------- Branch ↔ Program -----------
 
 class BranchProgramCreate(BaseModel):
+    academic_year_id: int
     branch_id: int
     program_id: int
 
 
 class BranchProgramOut(BaseModel):
     id: int
+    academic_year_id: int
     branch_id: int
     program_id: int
     created_at: datetime
+    academic_year: Optional[AcademicYearOut] = None
     branch: Optional[BranchOut] = None
     program: Optional[ProgramOut] = None
 
@@ -85,6 +89,7 @@ class BranchProgramOut(BaseModel):
 # ----------- Branch Section slot -----------
 
 class BranchSectionCreate(BaseModel):
+    academic_year_id: int
     branch_id: int
     program_id: int
     class_id: int
@@ -93,11 +98,13 @@ class BranchSectionCreate(BaseModel):
 
 class BranchSectionOut(BaseModel):
     id: int
+    academic_year_id: int
     branch_id: int
     program_id: int
     class_id: int
     section_id: int
     created_at: datetime
+    academic_year: Optional[AcademicYearOut] = None
     branch: Optional[BranchOut] = None
     program: Optional[ProgramOut] = None
     class_: Optional[ClassOut] = None
@@ -111,6 +118,7 @@ class BranchSectionOut(BaseModel):
 class FacultySectionCreate(BaseModel):
     user_id: int
     branch_section_id: int
+    subject: SubjectName
 
 
 class FacultySectionOut(BaseModel):
@@ -120,6 +128,7 @@ class FacultySectionOut(BaseModel):
     branch_id: int
     class_id: int
     section_id: int
+    subject: SubjectName
     assigned_at: datetime
     faculty: Optional[UserOut] = None
     branch: Optional[BranchOut] = None
@@ -133,7 +142,7 @@ class FacultySectionOut(BaseModel):
 
 class FacultyOverview(BaseModel):
     faculty: UserOut
-    subject: Optional[SubjectName] = None
+    subjects: list[FacultySubjectOut] = []
     sections: list[BranchSectionOut] = []
 
 
@@ -149,3 +158,4 @@ class BranchOverview(BaseModel):
     principals: list[UserOut] = []
     programs: list[ProgramOut] = []
     sections: list[BranchSectionOut] = []
+    faculty_sections: list[FacultySectionOut] = []

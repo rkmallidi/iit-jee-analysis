@@ -47,7 +47,7 @@ class User(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     username: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
-    email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
+    email: Mapped[str | None] = mapped_column(String(255), unique=True, nullable=True, index=True)
     full_name: Mapped[str] = mapped_column(String(255), nullable=False)
     hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
     phone: Mapped[str | None] = mapped_column(String(32), nullable=True)

@@ -1,0 +1,36 @@
+"""Student master-data model."""
+from __future__ import annotations
+
+from datetime import datetime, timezone
+from typing import TYPE_CHECKING, Optional
+
+from sqlalchemy import Boolean, DateTime, Integer, String
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from app.core.database import Base
+
+if TYPE_CHECKING:
+    from app.models.student_section import StudentSection
+
+
+class Student(Base):
+    __tablename__ = "students"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    admission_no: Mapped[str] = mapped_column(String(50), unique=True, nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    phone: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+
+    section_mappings: Mapped[list["StudentSection"]] = relationship(
+        "StudentSection", back_populates="student",
+        cascade="all, delete-orphan",
+    )
+
+    def __repr__(self) -> str:
+        return f"<Student {self.admission_no}>"

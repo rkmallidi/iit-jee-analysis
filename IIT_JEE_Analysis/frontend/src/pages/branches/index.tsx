@@ -114,7 +114,8 @@ export default function BranchesPage() {
       isLoading={isLoading}
       onAdd={() => { setEditItem(null); setOpen(true); }}
       onEdit={(b) => { setEditItem(b); setOpen(true); }}
-      onDelete={(b) => { if (confirm(`Delete branch "${b.name}"?`)) del.mutate(b.id); }}
+      onDelete={(b) => del.mutate(b.id)}
+      itemLabel={(b) => b.name}
       searchFilter={(b, q) => b.name.toLowerCase().includes(q) || b.code.toLowerCase().includes(q)}
       searchPlaceholder="Search by name or code…"
       columns={[

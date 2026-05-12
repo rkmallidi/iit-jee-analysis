@@ -6,6 +6,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 
 import { getUsers, getRoles, createUser, updateUser, deleteUser } from "@/lib/api";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -25,16 +26,21 @@ const ROLE_COLORS: Record<string, string> = {
   Operator: "bg-sky-100 text-sky-700 border-sky-200",
 };
 
-const schema = z.object({
+const baseSchema = z.object({
   username: z.string().min(3),
-  email: z.string().email(),
+  email: z.string().email().optional().or(z.literal("")),
   full_name: z.string().min(2),
   phone: z.string().optional(),
   whatsapp: z.string().optional(),
-  password: z.string().min(8).optional().or(z.literal("")),
   role_ids: z.array(z.number()).min(1, "Select at least one role"),
 });
-type FormData = z.infer<typeof schema>;
+const createSchema = baseSchema.extend({
+  password: z.string().min(8, "Password must be at least 8 characters"),
+});
+const editSchema = baseSchema.extend({
+  password: z.string().min(8, "Password must be at least 8 characters").or(z.literal("")),
+});
+type FormData = z.infer<typeof createSchema>;
 
 interface UserDialogProps {
   open: boolean;
@@ -49,8 +55,8 @@ function UserDialog({ open, onClose, editUser, roles }: UserDialogProps) {
 
   const [selectedRoles, setSelectedRoles] = useState<number[]>([]);
 
-  const { register, handleSubmit, formState: { errors, isSubmitting }, reset } = useForm<FormData>({
-    resolver: zodResolver(schema),
+  const { register, handleSubmit, formState: { errors, isSubmitting }, reset, setValue } = useForm<FormData>({
+    resolver: zodResolver(isEdit ? editSchema : createSchema),
     defaultValues: { username: "", email: "", full_name: "", phone: "", whatsapp: "", password: "", role_ids: [] },
   });
 
@@ -68,18 +74,29 @@ function UserDialog({ open, onClose, editUser, roles }: UserDialogProps) {
         role_ids: roleIds,
       });
     }
-  }, [open, editUser]);
+  }, [open, editUser, reset]);
 
   const toggleRole = (id: number) => {
-    setSelectedRoles((prev) =>
-      prev.includes(id) ? prev.filter((r) => r !== id) : [...prev, id]
-    );
+    setSelectedRoles((prev) => {
+      const next = prev.includes(id) ? prev.filter((r) => r !== id) : [...prev, id];
+      setValue("role_ids", next, { shouldValidate: true });
+      return next;
+    });
   };
 
   const mutation = useMutation({
     mutationFn: (data: FormData) => {
-      const payload = { ...data, role_ids: selectedRoles };
-      if (isEdit) return updateUser(editUser!.id, payload);
+      const payload: Record<string, unknown> = {
+        ...data,
+        role_ids: selectedRoles,
+        email: data.email || null,
+        phone: data.phone || null,
+        whatsapp: data.whatsapp || null,
+      };
+      if (isEdit) {
+        if (!data.password) delete payload.password;
+        return updateUser(editUser!.id, payload);
+      }
       return createUser(payload);
     },
     onSuccess: () => {
@@ -170,6 +187,7 @@ export default function UsersPage() {
   const [search, setSearch] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editUser, setEditUser] = useState<User | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<User | null>(null);
 
   const { data: users = [], isLoading } = useQuery({
     queryKey: ["users"],
@@ -301,9 +319,7 @@ export default function UsersPage() {
                             variant="ghost"
                             size="icon"
                             className="h-8 w-8 text-destructive hover:text-destructive"
-                            onClick={() => {
-                              if (confirm(`Delete ${u.full_name}?`)) deleteMutation.mutate(u.id);
-                            }}
+                            onClick={() => setDeleteTarget(u)}
                           >
                             <Trash2 className="h-3.5 w-3.5" />
                           </Button>
@@ -323,6 +339,13 @@ export default function UsersPage() {
         onClose={() => { setDialogOpen(false); setEditUser(null); }}
         editUser={editUser}
         roles={roles}
+      />
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        title={`Delete "${deleteTarget?.full_name}"?`}
+        description="This will permanently remove the user and all their assignments."
+        onConfirm={() => { if (deleteTarget) deleteMutation.mutate(deleteTarget.id); }}
+        onCancel={() => setDeleteTarget(null)}
       />
     </div>
   );

@@ -101,7 +101,8 @@ export default function ProgramsPage() {
       isLoading={isLoading}
       onAdd={() => { setEditItem(null); setOpen(true); }}
       onEdit={(p) => { setEditItem(p); setOpen(true); }}
-      onDelete={(p) => { if (confirm(`Delete "${p.name}"?`)) del.mutate(p.id); }}
+      onDelete={(p) => del.mutate(p.id)}
+      itemLabel={(p) => p.name}
       searchFilter={(p, q) => p.name.toLowerCase().includes(q) || p.code.toLowerCase().includes(q)}
       searchPlaceholder="Search programs…"
       columns={[

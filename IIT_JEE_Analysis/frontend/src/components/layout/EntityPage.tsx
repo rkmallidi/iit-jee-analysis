@@ -7,6 +7,7 @@ import { Plus, Pencil, Trash2, Search, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 
 export interface Column<T> {
   key: keyof T | string;
@@ -23,6 +24,7 @@ interface EntityPageProps<T extends { id: number }> {
   onAdd: () => void;
   onEdit: (item: T) => void;
   onDelete: (item: T) => void;
+  itemLabel?: (item: T) => string;
   searchPlaceholder?: string;
   searchFilter?: (item: T, q: string) => boolean;
   dialog: ReactNode;
@@ -37,11 +39,13 @@ export function EntityPage<T extends { id: number }>({
   onAdd,
   onEdit,
   onDelete,
+  itemLabel,
   searchPlaceholder = "Search…",
   searchFilter,
   dialog,
 }: EntityPageProps<T>) {
   const [search, setSearch] = useState("");
+  const [deleteTarget, setDeleteTarget] = useState<T | null>(null);
 
   const filtered = searchFilter
     ? items.filter((item) => searchFilter(item, search.toLowerCase()))
@@ -114,7 +118,7 @@ export function EntityPage<T extends { id: number }>({
                             variant="ghost"
                             size="icon"
                             className="h-8 w-8 text-destructive hover:text-destructive"
-                            onClick={() => onDelete(item)}
+                            onClick={() => setDeleteTarget(item)}
                           >
                             <Trash2 className="h-3.5 w-3.5" />
                           </Button>
@@ -130,6 +134,13 @@ export function EntityPage<T extends { id: number }>({
       </Card>
 
       {dialog}
+
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        title={deleteTarget && itemLabel ? `Delete "${itemLabel(deleteTarget)}"?` : "Delete this item?"}
+        onConfirm={() => { if (deleteTarget) onDelete(deleteTarget); }}
+        onCancel={() => setDeleteTarget(null)}
+      />
     </div>
   );
 }

@@ -90,7 +90,8 @@ export default function ClassesPage() {
       isLoading={isLoading}
       onAdd={() => { setEditItem(null); setOpen(true); }}
       onEdit={(c) => { setEditItem(c); setOpen(true); }}
-      onDelete={(c) => { if (confirm(`Delete "${c.name}"?`)) del.mutate(c.id); }}
+      onDelete={(c) => del.mutate(c.id)}
+      itemLabel={(c) => c.name}
       searchFilter={(c, q) => c.name.toLowerCase().includes(q)}
       searchPlaceholder="Search classes…"
       columns={[

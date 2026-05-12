@@ -22,7 +22,7 @@ class RoleOut(BaseModel):
 
 class UserBase(BaseModel):
     username: str
-    email: EmailStr
+    email: Optional[EmailStr] = None
     full_name: str
     phone: Optional[str] = None
     whatsapp: Optional[str] = None

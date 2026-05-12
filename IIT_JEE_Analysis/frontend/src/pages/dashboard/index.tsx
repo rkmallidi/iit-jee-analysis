@@ -1,8 +1,11 @@
+import { useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Users, GitBranch, BookOpen, Layers, Grid3x3, Network } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { getBranches, getPrograms, getUsers, getClasses, getSections, getBranchSections } from "@/lib/api";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { getBranches, getPrograms, getUsers, getClasses, getSections, getBranchSections, getAcademicYears } from "@/lib/api";
 import { useAuthStore } from "@/store/auth";
+import { useAcademicYearStore } from "@/store/academicYear";
 
 const StatCard = ({
   icon: Icon,
@@ -32,26 +35,63 @@ const StatCard = ({
 
 export default function DashboardPage() {
   const { user } = useAuthStore();
+  const { selectedYear, setSelectedYear } = useAcademicYearStore();
+  const yearId = selectedYear?.id;
+
+  const { data: years = [] } = useQuery({
+    queryKey: ["academic-years"],
+    queryFn: () => getAcademicYears().then(r => r.data),
+  });
+
+  useEffect(() => {
+    if (!selectedYear && years.length > 0) {
+      const current = years.find(y => y.is_current) ?? years[0];
+      setSelectedYear(current);
+    }
+  }, [years, selectedYear, setSelectedYear]);
 
   const { data: users } = useQuery({ queryKey: ["users"], queryFn: () => getUsers().then((r) => r.data), enabled: user?.roles.some(r => r.name === "Admin") });
   const { data: branches } = useQuery({ queryKey: ["branches"], queryFn: () => getBranches().then((r) => r.data) });
   const { data: programs } = useQuery({ queryKey: ["programs"], queryFn: () => getPrograms().then((r) => r.data) });
   const { data: classes } = useQuery({ queryKey: ["classes"], queryFn: () => getClasses().then((r) => r.data) });
   const { data: sections } = useQuery({ queryKey: ["sections"], queryFn: () => getSections().then((r) => r.data) });
-  const { data: bsections } = useQuery({ queryKey: ["branch-sections"], queryFn: () => getBranchSections().then((r) => r.data) });
+  const { data: bsections } = useQuery({
+    queryKey: ["branch-sections", yearId],
+    queryFn: () => getBranchSections({ academic_year_id: yearId }).then((r) => r.data),
+  });
 
   const isAdmin = user?.roles.some(r => r.name === "Admin");
 
   return (
     <div className="space-y-8">
       {/* Welcome */}
-      <div>
-        <h2 className="text-2xl font-bold">
-          Welcome back, {user?.full_name.split(" ")[0]} 👋
-        </h2>
-        <p className="text-muted-foreground mt-1">
-          Here's an overview of the IIT JEE platform.
-        </p>
+      <div className="flex items-start justify-between gap-3 flex-wrap">
+        <div>
+          <h2 className="text-2xl font-bold">
+            Welcome back, {user?.full_name.split(" ")[0]} 👋
+          </h2>
+          <p className="text-muted-foreground mt-1">
+            Here's an overview of the IIT JEE platform.
+          </p>
+        </div>
+        <Select
+          value={selectedYear ? String(selectedYear.id) : ""}
+          onValueChange={v => {
+            const yr = years.find(y => y.id === +v);
+            if (yr) setSelectedYear(yr);
+          }}
+        >
+          <SelectTrigger className="w-36 h-9">
+            <SelectValue placeholder="Select year" />
+          </SelectTrigger>
+          <SelectContent>
+            {years.map(y => (
+              <SelectItem key={y.id} value={String(y.id)}>
+                {y.name}{y.is_current ? " ★" : ""}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
 
       {/* Stats grid */}

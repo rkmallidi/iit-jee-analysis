@@ -82,7 +82,8 @@ export default function SectionsPage() {
       isLoading={isLoading}
       onAdd={() => { setEditItem(null); setOpen(true); }}
       onEdit={(s) => { setEditItem(s); setOpen(true); }}
-      onDelete={(s) => { if (confirm(`Delete "${s.name}"?`)) del.mutate(s.id); }}
+      onDelete={(s) => del.mutate(s.id)}
+      itemLabel={(s) => s.name}
       searchFilter={(s, q) => s.name.toLowerCase().includes(q)}
       searchPlaceholder="Search sections…"
       columns={[

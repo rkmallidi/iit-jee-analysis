@@ -13,7 +13,9 @@ const PAGE_TITLES: Record<string, string> = {
   "/programs": "Program Management",
   "/classes": "Class Management",
   "/sections": "Section Management",
+  "/academic-years": "Academic Years",
   "/mappings": "Mapping & Overview",
+  "/students": "Students",
   "/settings": "Settings",
 };
 

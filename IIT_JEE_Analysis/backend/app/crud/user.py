@@ -37,7 +37,7 @@ def seed_roles(db: Session) -> None:
 
 def _user_query():
     return select(User).options(
-        selectinload(User.user_roles).selectinload("role")
+        selectinload(User.user_roles).selectinload(UserRole.role)
     )
 
 
@@ -74,8 +74,7 @@ def create_user(db: Session, data: UserCreate) -> User:
         for role in roles:
             db.add(UserRole(user_id=user.id, role_id=role.id))
     db.commit()
-    db.refresh(user)
-    return user
+    return db.scalar(_user_query().where(User.id == user.id))
 
 
 def update_user(db: Session, user: User, data: UserUpdate) -> User:
@@ -98,8 +97,7 @@ def update_user(db: Session, user: User, data: UserUpdate) -> User:
         for role in roles:
             db.add(UserRole(user_id=user.id, role_id=role.id))
     db.commit()
-    db.refresh(user)
-    return user
+    return db.scalar(_user_query().where(User.id == user.id))
 
 
 def update_user_theme(db: Session, user: User, theme_prefs: dict) -> User:
