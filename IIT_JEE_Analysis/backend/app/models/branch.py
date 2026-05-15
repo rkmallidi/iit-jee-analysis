@@ -11,7 +11,8 @@ from app.core.database import Base
 
 if TYPE_CHECKING:
     from app.models.mapping import (
-        BranchProgram, BranchSection, DeanBranch, FacultySection, PrincipalBranch
+        BranchProgram, BranchSection, DeanBranch, FacultySection, PrincipalBranch,
+        VicePrincipalBranch, OperatorBranch
     )
 
 
@@ -34,6 +35,12 @@ class Branch(Base):
     )
     principal_branches: Mapped[List["PrincipalBranch"]] = relationship(
         "PrincipalBranch", back_populates="branch", cascade="all, delete-orphan"
+    )
+    vice_principal_branches: Mapped[List["VicePrincipalBranch"]] = relationship(
+        "VicePrincipalBranch", back_populates="branch", cascade="all, delete-orphan"
+    )
+    operator_branches: Mapped[List["OperatorBranch"]] = relationship(
+        "OperatorBranch", back_populates="branch", cascade="all, delete-orphan"
     )
     branch_programs: Mapped[List["BranchProgram"]] = relationship(
         "BranchProgram", back_populates="branch", cascade="all, delete-orphan"

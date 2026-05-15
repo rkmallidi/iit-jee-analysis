@@ -11,6 +11,8 @@ import {
   getBranches, getPrograms, getClasses, getSections, getUsers,
   getDeanBranches, assignDeanBranch, removeDeanBranch,
   getPrincipalBranches, assignPrincipalBranch, removePrincipalBranch,
+  getVicePrincipalBranches, assignVicePrincipalBranch, removeVicePrincipalBranch,
+  getOperatorBranches, assignOperatorBranch, removeOperatorBranch,
   getBranchPrograms, assignBranchProgram, removeBranchProgram,
   getBranchSections, createBranchSection, deleteBranchSection,
   getFacultySections, assignFacultySection, removeFacultySection,
@@ -112,6 +114,8 @@ function BranchDashboardTab() {
   const [addingSlot, setAddingSlot] = useState<Record<number, { programId: string; classId: string; sectionId: string }>>({});
   const [addingDean, setAddingDean] = useState<Record<number, string>>({});
   const [addingPrincipal, setAddingPrincipal] = useState<Record<number, string>>({});
+  const [addingVicePrincipal, setAddingVicePrincipal] = useState<Record<number, string>>({});
+  const [addingOperator, setAddingOperator] = useState<Record<number, string>>({});
   const [pendingAction, setPendingAction] = useState<{ fn: () => void; title: string; description: string } | null>(null);
   const [editingFaculty, setEditingFaculty] = useState<Set<string>>(new Set());
   const [studentViewBs, setStudentViewBs] = useState<BranchSection | null>(null);
@@ -131,6 +135,8 @@ function BranchDashboardTab() {
   });
   const { data: deanMaps = [] } = useQuery({ queryKey: ["dean-branches"], queryFn: () => getDeanBranches().then(r => r.data) });
   const { data: principalMaps = [] } = useQuery({ queryKey: ["principal-branches"], queryFn: () => getPrincipalBranches().then(r => r.data) });
+  const { data: vicePrincipalMaps = [] } = useQuery({ queryKey: ["vice-principal-branches"], queryFn: () => getVicePrincipalBranches().then(r => r.data) });
+  const { data: operatorMaps = [] } = useQuery({ queryKey: ["operator-branches"], queryFn: () => getOperatorBranches().then(r => r.data) });
   const { data: facultyMaps = [] } = useQuery({ queryKey: ["faculty-sections"], queryFn: () => getFacultySections().then(r => r.data) });
   const { data: students = [] } = useQuery({
     queryKey: ["students", yearId],
@@ -187,6 +193,32 @@ function BranchDashboardTab() {
     mutationFn: (id: number) => removePrincipalBranch(id),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["principal-branches"] }); toast({ title: "Principal removed" }); },
   });
+  const assignVicePrincipal = useMutation({
+    mutationFn: ({ userId, branchId }: { userId: number; branchId: number }) => assignVicePrincipalBranch(userId, branchId),
+    onSuccess: (_d, { branchId }) => {
+      qc.invalidateQueries({ queryKey: ["vice-principal-branches"] });
+      setAddingVicePrincipal(p => ({ ...p, [branchId]: "" }));
+      toast({ title: "Vice-Principal assigned" });
+    },
+    onError: () => toast({ title: "Error assigning vice-principal", variant: "destructive" }),
+  });
+  const removeVicePrincipal = useMutation({
+    mutationFn: (id: number) => removeVicePrincipalBranch(id),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["vice-principal-branches"] }); toast({ title: "Vice-Principal removed" }); },
+  });
+  const assignOperator = useMutation({
+    mutationFn: ({ userId, branchId }: { userId: number; branchId: number }) => assignOperatorBranch(userId, branchId),
+    onSuccess: (_d, { branchId }) => {
+      qc.invalidateQueries({ queryKey: ["operator-branches"] });
+      setAddingOperator(p => ({ ...p, [branchId]: "" }));
+      toast({ title: "Operator assigned" });
+    },
+    onError: () => toast({ title: "Error assigning operator", variant: "destructive" }),
+  });
+  const removeOperator = useMutation({
+    mutationFn: (id: number) => removeOperatorBranch(id),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["operator-branches"] }); toast({ title: "Operator removed" }); },
+  });
   const createSlot = useMutation({
     mutationFn: (branchId: number) => {
       const f = addingSlot[branchId];
@@ -222,6 +254,8 @@ function BranchDashboardTab() {
 
   const deans = users.filter(u => u.roles.some(r => r.name === "Dean"));
   const principals = users.filter(u => u.roles.some(r => r.name === "Principal"));
+  const vicePrincipals = users.filter(u => u.roles.some(r => r.name === "Vice-Principal"));
+  const operators = users.filter(u => u.roles.some(r => r.name === "Operator"));
   const faculty = users.filter(u => u.roles.some(r => r.name === "Faculty"));
 
   const SUBJECTS: SubjectName[] = ["Mathematics", "Physics", "Chemistry"];
@@ -284,6 +318,8 @@ function BranchDashboardTab() {
           const branchSlots = bsections.filter(bs => bs.branch_id === branch.id);
           const branchDeans = deanMaps.filter(d => d.branch_id === branch.id);
           const branchPrincipals = principalMaps.filter(p => p.branch_id === branch.id);
+          const branchVicePrincipals = vicePrincipalMaps.filter(v => v.branch_id === branch.id);
+          const branchOperators = operatorMaps.filter(o => o.branch_id === branch.id);
           const staffedCount = branchSlots.filter(bs => isFullyStaffedSlot(bs.id)).length;
           const slotForm = addingSlot[branch.id] ?? { programId: "", classId: "", sectionId: "" };
 
@@ -342,7 +378,25 @@ function BranchDashboardTab() {
                           })}
                         </span>
                       )}
-                      {branchDeans.length === 0 && branchPrincipals.length === 0 && branch.address && (
+                      {branchVicePrincipals.length > 0 && (
+                        <span className="flex items-center gap-1 text-[10px]">
+                          <span className="text-muted-foreground/60 font-semibold">V.P.</span>
+                          {branchVicePrincipals.map(v => {
+                            const u = users.find(u => u.id === v.user_id);
+                            return <span key={v.id} className="text-orange-700 font-medium">{u?.full_name ?? `#${v.user_id}`}</span>;
+                          })}
+                        </span>
+                      )}
+                      {branchOperators.length > 0 && (
+                        <span className="flex items-center gap-1 text-[10px]">
+                          <span className="text-muted-foreground/60 font-semibold">Op</span>
+                          {branchOperators.map(o => {
+                            const u = users.find(u => u.id === o.user_id);
+                            return <span key={o.id} className="text-cyan-700 font-medium">{u?.full_name ?? `#${o.user_id}`}</span>;
+                          })}
+                        </span>
+                      )}
+                      {branchDeans.length === 0 && branchPrincipals.length === 0 && branchVicePrincipals.length === 0 && branchOperators.length === 0 && branch.address && (
                         <p className="text-[11px] text-muted-foreground truncate">{branch.address}</p>
                       )}
                     </div>
@@ -416,6 +470,52 @@ function BranchDashboardTab() {
                         </Select>
                       )}
                       {branchPrincipals.length === 0 && availablePrincipals.length === 0 && <span className="text-[11px] text-muted-foreground italic">None</span>}
+                    </div>
+                    <div className="hidden sm:block w-px h-4 bg-border" />
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide w-16">V.Principal</span>
+                      {branchVicePrincipals.map(v => {
+                        const u = users.find(u => u.id === v.user_id);
+                        const name = u?.full_name ?? `#${v.user_id}`;
+                        return (
+                          <span key={v.id} className="inline-flex items-center gap-1 rounded-full bg-orange-100 text-orange-700 border border-orange-200 px-2 py-0 text-[11px] font-medium">
+                            {name}
+                            <button onClick={e => { e.stopPropagation(); setPendingAction({ fn: () => removeVicePrincipal.mutate(v.id), title: `Remove Vice-Principal`, description: `Remove "${name}" as Vice-Principal from this branch?` }); }} className="ml-0.5 hover:text-red-600">
+                              <X className="h-2.5 w-2.5" />
+                            </button>
+                          </span>
+                        );
+                      })}
+                      {vicePrincipals.filter(u => !new Set(branchVicePrincipals.map(v => v.user_id)).has(u.id)).length > 0 && (
+                        <Select value={addingVicePrincipal[branch.id] ?? ""} onValueChange={v => { setAddingVicePrincipal(p => ({ ...p, [branch.id]: v })); assignVicePrincipal.mutate({ userId: +v, branchId: branch.id }); }}>
+                          <SelectTrigger className="h-5 w-36 text-[11px] border-dashed"><SelectValue placeholder="+ V.Principal" /></SelectTrigger>
+                          <SelectContent>{vicePrincipals.filter(u => !new Set(branchVicePrincipals.map(v => v.user_id)).has(u.id)).map(u => <SelectItem key={u.id} value={String(u.id)}>{u.full_name}</SelectItem>)}</SelectContent>
+                        </Select>
+                      )}
+                      {branchVicePrincipals.length === 0 && vicePrincipals.filter(u => !new Set(branchVicePrincipals.map(v => v.user_id)).has(u.id)).length === 0 && <span className="text-[11px] text-muted-foreground italic">None</span>}
+                    </div>
+                    <div className="hidden sm:block w-px h-4 bg-border" />
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide w-12">Operator</span>
+                      {branchOperators.map(o => {
+                        const u = users.find(u => u.id === o.user_id);
+                        const name = u?.full_name ?? `#${o.user_id}`;
+                        return (
+                          <span key={o.id} className="inline-flex items-center gap-1 rounded-full bg-cyan-100 text-cyan-700 border border-cyan-200 px-2 py-0 text-[11px] font-medium">
+                            {name}
+                            <button onClick={e => { e.stopPropagation(); setPendingAction({ fn: () => removeOperator.mutate(o.id), title: `Remove Operator`, description: `Remove "${name}" as Operator from this branch?` }); }} className="ml-0.5 hover:text-red-600">
+                              <X className="h-2.5 w-2.5" />
+                            </button>
+                          </span>
+                        );
+                      })}
+                      {operators.filter(u => !new Set(branchOperators.map(o => o.user_id)).has(u.id)).length > 0 && (
+                        <Select value={addingOperator[branch.id] ?? ""} onValueChange={v => { setAddingOperator(p => ({ ...p, [branch.id]: v })); assignOperator.mutate({ userId: +v, branchId: branch.id }); }}>
+                          <SelectTrigger className="h-5 w-28 text-[11px] border-dashed"><SelectValue placeholder="+ Operator" /></SelectTrigger>
+                          <SelectContent>{operators.filter(u => !new Set(branchOperators.map(o => o.user_id)).has(u.id)).map(u => <SelectItem key={u.id} value={String(u.id)}>{u.full_name}</SelectItem>)}</SelectContent>
+                        </Select>
+                      )}
+                      {branchOperators.length === 0 && operators.filter(u => !new Set(branchOperators.map(o => o.user_id)).has(u.id)).length === 0 && <span className="text-[11px] text-muted-foreground italic">None</span>}
                     </div>
                   </div>
 

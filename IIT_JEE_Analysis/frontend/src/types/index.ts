@@ -7,6 +7,7 @@ export type RoleName =
   | "Operator";
 
 export type SubjectName = "Mathematics" | "Chemistry" | "Physics";
+export type RankCategory = "Top 10" | "Top 100" | "Top 1000" | "Top 10000" | "Qualifier";
 
 export interface Role {
   id: number;
@@ -148,6 +149,7 @@ export interface Student {
   admission_no: string;
   name: string;
   phone?: string;
+  rank_category?: RankCategory | null;
   is_active: boolean;
   created_at: string;
   section_mapping?: StudentSection;

@@ -65,6 +65,42 @@ class PrincipalBranchOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+# ----------- Vice-Principal ↔ Branch -----------
+
+class VicePrincipalBranchCreate(BaseModel):
+    user_id: int
+    branch_id: int
+
+
+class VicePrincipalBranchOut(BaseModel):
+    id: int
+    user_id: int
+    branch_id: int
+    assigned_at: datetime
+    vice_principal: Optional[UserOut] = None
+    branch: Optional[BranchOut] = None
+
+    model_config = {"from_attributes": True}
+
+
+# ----------- Operator ↔ Branch -----------
+
+class OperatorBranchCreate(BaseModel):
+    user_id: int
+    branch_id: int
+
+
+class OperatorBranchOut(BaseModel):
+    id: int
+    user_id: int
+    branch_id: int
+    assigned_at: datetime
+    operator: Optional[UserOut] = None
+    branch: Optional[BranchOut] = None
+
+    model_config = {"from_attributes": True}
+
+
 # ----------- Branch ↔ Program -----------
 
 class BranchProgramCreate(BaseModel):

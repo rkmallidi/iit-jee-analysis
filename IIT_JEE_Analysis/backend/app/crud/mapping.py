@@ -14,6 +14,8 @@ from app.models.mapping import (
     FacultySection,
     FacultySubject,
     PrincipalBranch,
+    VicePrincipalBranch,
+    OperatorBranch,
     SubjectName,
 )
 from app.models.program import Program
@@ -33,6 +35,18 @@ def _principal_branch_query():
     return select(PrincipalBranch).options(
         selectinload(PrincipalBranch.principal).selectinload(User.user_roles).selectinload(UserRole.role),
         selectinload(PrincipalBranch.branch),
+    )
+
+def _vice_principal_branch_query():
+    return select(VicePrincipalBranch).options(
+        selectinload(VicePrincipalBranch.vice_principal).selectinload(User.user_roles).selectinload(UserRole.role),
+        selectinload(VicePrincipalBranch.branch),
+    )
+
+def _operator_branch_query():
+    return select(OperatorBranch).options(
+        selectinload(OperatorBranch.operator).selectinload(User.user_roles).selectinload(UserRole.role),
+        selectinload(OperatorBranch.branch),
     )
 
 def _branch_section_query():
@@ -122,6 +136,54 @@ def assign_principal_branch(db: Session, user_id: int, branch_id: int) -> Princi
     return db.scalar(_principal_branch_query().where(PrincipalBranch.id == obj.id))
 
 def remove_principal_branch(db: Session, db_obj: PrincipalBranch) -> None:
+    db.delete(db_obj); db.commit()
+
+
+# -------- VicePrincipalBranch --------
+
+def get_vice_principal_branches(db: Session) -> Sequence[VicePrincipalBranch]:
+    return db.scalars(_vice_principal_branch_query()).all()
+
+def get_vice_principal_branch(db: Session, id: int) -> Optional[VicePrincipalBranch]:
+    return db.get(VicePrincipalBranch, id)
+
+def assign_vice_principal_branch(db: Session, user_id: int, branch_id: int) -> VicePrincipalBranch:
+    existing = db.scalar(
+        select(VicePrincipalBranch).where(
+            VicePrincipalBranch.user_id == user_id, VicePrincipalBranch.branch_id == branch_id
+        )
+    )
+    if existing:
+        return db.scalar(_vice_principal_branch_query().where(VicePrincipalBranch.id == existing.id))
+    obj = VicePrincipalBranch(user_id=user_id, branch_id=branch_id)
+    db.add(obj); db.commit()
+    return db.scalar(_vice_principal_branch_query().where(VicePrincipalBranch.id == obj.id))
+
+def remove_vice_principal_branch(db: Session, db_obj: VicePrincipalBranch) -> None:
+    db.delete(db_obj); db.commit()
+
+
+# -------- OperatorBranch --------
+
+def get_operator_branches(db: Session) -> Sequence[OperatorBranch]:
+    return db.scalars(_operator_branch_query()).all()
+
+def get_operator_branch(db: Session, id: int) -> Optional[OperatorBranch]:
+    return db.get(OperatorBranch, id)
+
+def assign_operator_branch(db: Session, user_id: int, branch_id: int) -> OperatorBranch:
+    existing = db.scalar(
+        select(OperatorBranch).where(
+            OperatorBranch.user_id == user_id, OperatorBranch.branch_id == branch_id
+        )
+    )
+    if existing:
+        return db.scalar(_operator_branch_query().where(OperatorBranch.id == existing.id))
+    obj = OperatorBranch(user_id=user_id, branch_id=branch_id)
+    db.add(obj); db.commit()
+    return db.scalar(_operator_branch_query().where(OperatorBranch.id == obj.id))
+
+def remove_operator_branch(db: Session, db_obj: OperatorBranch) -> None:
     db.delete(db_obj); db.commit()
 
 

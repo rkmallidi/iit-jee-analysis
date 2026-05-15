@@ -1,9 +1,9 @@
 import { useRef, useState, useEffect } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { useAcademicYearStore } from "@/store/academicYear";
 import {
   Download, FileSpreadsheet, Loader2, AlertCircle, CheckCircle2,
-  ChevronRight, Search, X,
+  ChevronRight, Search, X, Edit, Save, Plus,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -14,9 +14,284 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { toast } from "@/hooks/use-toast";
 import {
   getAcademicYears, getStudents, getBranches,
-  downloadSectionTemplate, uploadSectionExcel,
+  downloadSectionTemplate, uploadSectionExcel, updateStudent,
+  getBranchSections, assignStudentSection, removeStudentSection,
+  getClasses, getPrograms, getSections, createStudent,
 } from "@/lib/api";
-import type { Branch, Student, UploadResult } from "@/types";
+import type { Branch, Student, UploadResult, RankCategory, BranchSection } from "@/types";
+
+// ── Helper to group sections ───────────────────────────────────────────────────
+type SectionGroup = {
+  branch: string;
+  program: string;
+  class_: string;
+  sections: Array<{ id: number; name: string }>;
+};
+
+function groupSectionsByHierarchy(branchSections: BranchSection[]): SectionGroup[] {
+  const groups = new Map<string, SectionGroup>();
+
+  branchSections.forEach(bs => {
+    const key = `${bs.branch?.name || ""}|${bs.program?.name || ""}|${bs.class_?.name || ""}`;
+    if (!groups.has(key)) {
+      groups.set(key, {
+        branch: bs.branch?.name || "",
+        program: bs.program?.name || "",
+        class_: bs.class_?.name || "",
+        sections: [],
+      });
+    }
+    const group = groups.get(key)!;
+    if (bs.section?.name) {
+      group.sections.push({ id: bs.id, name: bs.section.name });
+    }
+  });
+
+  return Array.from(groups.values());
+}
+
+// ── Edit student modal ────────────────────────────────────────────────────────
+function EditStudentModal({ student, onClose, onSave }: { student: Student; onClose: () => void; onSave: (data: any) => Promise<any> }) {
+  const { selectedYear } = useAcademicYearStore();
+  const [name, setName] = useState(student.name);
+  const [phone, setPhone] = useState(student.phone ?? "");
+  const [rankCategory, setRankCategory] = useState<string>(student.rank_category || "none");
+  const [isActive, setIsActive] = useState(student.is_active);
+  const [selectedBranchSectionId, setSelectedBranchSectionId] = useState<string>(
+    student.section_mapping?.branch_section_id?.toString() || "unassigned"
+  );
+  const [saving, setSaving] = useState(false);
+
+  const RANK_CATEGORIES: RankCategory[] = ["Top 10", "Top 100", "Top 1000", "Top 10000", "Qualifier"];
+
+  const { data: branchSections = [] } = useQuery<BranchSection[]>({
+    queryKey: ["branch-sections", selectedYear?.id],
+    queryFn: () => getBranchSections({ academic_year_id: selectedYear?.id }).then(r => r.data),
+    enabled: !!selectedYear?.id,
+  });
+
+  const currentSection = student.section_mapping?.branch_section;
+  const groupedSections = groupSectionsByHierarchy(branchSections);
+
+  const handleSave = async () => {
+    if (!name.trim()) {
+      toast({ title: "Name is required", variant: "destructive" });
+      return;
+    }
+    setSaving(true);
+    try {
+      const newBranchSectionId = selectedBranchSectionId === "unassigned" ? null : parseInt(selectedBranchSectionId);
+      const oldBranchSectionId = student.section_mapping?.branch_section_id;
+
+      await onSave({
+        name: name.trim(),
+        phone: phone.trim() || null,
+        rank_category: rankCategory === "none" ? null : rankCategory,
+        is_active: isActive,
+        section_update: {
+          old_section_id: oldBranchSectionId,
+          new_section_id: newBranchSectionId,
+        },
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Dialog open onOpenChange={(isOpen) => !isOpen && onClose()}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle>Edit Student Details</DialogTitle>
+        </DialogHeader>
+        <div className="grid gap-4 py-4">
+          <div className="grid gap-2">
+            <label htmlFor="admno" className="text-sm font-medium">Admission No</label>
+            <Input id="admno" value={student.admission_no} disabled className="bg-muted" />
+          </div>
+          <div className="grid gap-2">
+            <label htmlFor="name" className="text-sm font-medium">Name *</label>
+            <Input
+              id="name"
+              value={name}
+              onChange={e => setName(e.target.value)}
+              placeholder="Full name"
+              autoFocus
+            />
+          </div>
+          <div className="grid gap-2">
+            <label htmlFor="phone" className="text-sm font-medium">Phone</label>
+            <Input
+              id="phone"
+              value={phone}
+              onChange={e => setPhone(e.target.value)}
+              placeholder="+91 9876543210"
+            />
+          </div>
+          <div className="grid gap-2">
+            <label htmlFor="rank" className="text-sm font-medium">Rank Category</label>
+            <Select value={rankCategory} onValueChange={setRankCategory}>
+              <SelectTrigger id="rank">
+                <SelectValue placeholder="Select rank category" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">None</SelectItem>
+                <SelectItem value="Top 10">Top 10</SelectItem>
+                <SelectItem value="Top 100">Top 100</SelectItem>
+                <SelectItem value="Top 1000">Top 1000</SelectItem>
+                <SelectItem value="Top 10000">Top 10000</SelectItem>
+                <SelectItem value="Qualifier">Qualifier</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="grid gap-2">
+            <label htmlFor="section" className="text-sm font-medium">Section Assignment</label>
+            {currentSection && (
+              <p className="text-xs text-muted-foreground mb-1">
+                Current: {currentSection.branch?.name} • {currentSection.program?.name} • {currentSection.class_?.name} • {currentSection.section?.name}
+              </p>
+            )}
+            <Select value={selectedBranchSectionId} onValueChange={setSelectedBranchSectionId}>
+              <SelectTrigger id="section">
+                <SelectValue placeholder="Select new section (optional)" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="unassigned">Unassigned</SelectItem>
+                {groupedSections.map((group) =>
+                  group.sections.map(section => (
+                    <SelectItem key={section.id} value={section.id.toString()}>
+                      <span className="text-xs">{group.branch} • {group.program} • {group.class_} / <strong>{section.name}</strong></span>
+                    </SelectItem>
+                  ))
+                )}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex items-center space-x-2">
+            <input
+              type="checkbox"
+              id="is_active"
+              checked={isActive}
+              onChange={e => setIsActive(e.target.checked)}
+              className="w-4 h-4 rounded"
+            />
+            <label htmlFor="is_active" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
+              Active
+            </label>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose} disabled={saving}>Cancel</Button>
+          <Button onClick={handleSave} disabled={saving}>
+            {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+            Save Changes
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ── Add student modal ─────────────────────────────────────────────────────────
+function AddStudentModal({ onClose, onSave }: { onClose: () => void; onSave: (data: any) => Promise<any> }) {
+  const { selectedYear } = useAcademicYearStore();
+  const [admissionNo, setAdmissionNo] = useState("");
+  const [name, setName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [selectedBranchSectionId, setSelectedBranchSectionId] = useState<string>("unassigned");
+  const [saving, setSaving] = useState(false);
+
+  const { data: branchSections = [] } = useQuery({
+    queryKey: ["branch-sections", selectedYear?.id],
+    queryFn: () => getBranchSections({ academic_year_id: selectedYear?.id }).then(r => r.data),
+    enabled: !!selectedYear?.id,
+  });
+
+  const groupedSections = groupSectionsByHierarchy(branchSections);
+
+  const handleSave = async () => {
+    if (!admissionNo.trim() || !name.trim()) {
+      toast({ title: "Admission No and Name are required", variant: "destructive" });
+      return;
+    }
+    setSaving(true);
+    try {
+      await onSave({
+        admission_no: admissionNo.trim(),
+        name: name.trim(),
+        phone: phone.trim() || null,
+        branch_section_id: selectedBranchSectionId === "unassigned" ? null : parseInt(selectedBranchSectionId),
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Dialog open onOpenChange={(isOpen) => !isOpen && onClose()}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle>Add New Student</DialogTitle>
+        </DialogHeader>
+        <div className="grid gap-4 py-4">
+          <div className="grid gap-2">
+            <label htmlFor="adm" className="text-sm font-medium">Admission No *</label>
+            <Input
+              id="adm"
+              value={admissionNo}
+              onChange={e => setAdmissionNo(e.target.value)}
+              placeholder="e.g., 7050729"
+              autoFocus
+            />
+          </div>
+          <div className="grid gap-2">
+            <label htmlFor="nm" className="text-sm font-medium">Name *</label>
+            <Input
+              id="nm"
+              value={name}
+              onChange={e => setName(e.target.value)}
+              placeholder="Full student name"
+            />
+          </div>
+          <div className="grid gap-2">
+            <label htmlFor="ph" className="text-sm font-medium">Phone</label>
+            <Input
+              id="ph"
+              value={phone}
+              onChange={e => setPhone(e.target.value)}
+              placeholder="+91 9876543210"
+            />
+          </div>
+          <div className="grid gap-2">
+            <label htmlFor="sec" className="text-sm font-medium">Section Assignment</label>
+            <Select value={selectedBranchSectionId} onValueChange={setSelectedBranchSectionId}>
+              <SelectTrigger id="sec">
+                <SelectValue placeholder="Select section (optional)" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="unassigned">Unassigned</SelectItem>
+                {groupedSections.map((group) =>
+                  group.sections.map(section => (
+                    <SelectItem key={section.id} value={section.id.toString()}>
+                      <span className="text-xs">{group.branch} • {group.program} • {group.class_} / <strong>{section.name}</strong></span>
+                    </SelectItem>
+                  ))
+                )}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose} disabled={saving}>Cancel</Button>
+          <Button onClick={handleSave} disabled={saving}>
+            {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Plus className="mr-2 h-4 w-4" />}
+            Create Student
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
 
 // ── Upload result dialog ───────────────────────────────────────────────────────
 function UploadResultDialog({ result, onClose }: { result: UploadResult; onClose: () => void }) {
@@ -76,6 +351,8 @@ export default function StudentMappingPage() {
   const [uploading, setUploading] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [uploadResult, setUploadResult] = useState<UploadResult | null>(null);
+  const [editingStudent, setEditingStudent] = useState<Student | null>(null);
+  const [addingStudent, setAddingStudent] = useState(false);
 
   const { data: years = [] } = useQuery({
     queryKey: ["academic-years"],
@@ -99,6 +376,83 @@ export default function StudentMappingPage() {
     queryFn: () => getStudents({ academic_year_id: yearId }).then(r => r.data),
     enabled: !!yearId,
   });
+
+  const updateStudentMutation = useMutation({
+    mutationFn: async (data: any) => {
+      const { section_update, ...studentData } = data;
+
+      // Update student details
+      await updateStudent(editingStudent!.id, studentData);
+
+      // Handle section reassignment if needed
+      if (section_update && selectedYear) {
+        const { old_section_id, new_section_id } = section_update;
+        const sectionChanged = old_section_id !== new_section_id;
+
+        if (sectionChanged) {
+          // Remove old assignment if it exists
+          if (old_section_id) {
+            try {
+              await removeStudentSection(editingStudent!.id, selectedYear.id);
+            } catch (e) {
+              console.error("Error removing old section", e);
+            }
+          }
+
+          // Assign new section if selected
+          if (new_section_id) {
+            await assignStudentSection(editingStudent!.id, new_section_id, selectedYear.id);
+          }
+        }
+      }
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["students", yearId] });
+      toast({ title: "Student updated successfully" });
+      setEditingStudent(null);
+    },
+    onError: (error: any) => {
+      const message = error?.response?.data?.detail ?? "Error updating student";
+      toast({ title: "Error", description: message, variant: "destructive" });
+    },
+  });
+
+  const createStudentMutation = useMutation({
+    mutationFn: async (data: any) => {
+      const { branch_section_id, ...studentData } = data;
+
+      // Create student
+      const student = await createStudent(studentData);
+
+      // Assign section if provided and year is selected
+      if (branch_section_id && selectedYear) {
+        await assignStudentSection(student.data.id, branch_section_id, selectedYear.id);
+      }
+
+      return student.data;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["students", yearId] });
+      toast({ title: "Student created successfully" });
+      setAddingStudent(false);
+    },
+    onError: (error: any) => {
+      const message = error?.response?.data?.detail ?? "Error creating student";
+      toast({ title: "Error", description: message, variant: "destructive" });
+    },
+  });
+
+  const getRankCategoryColor = (category: RankCategory | null | undefined) => {
+    if (!category) return null;
+    const colorMap: Record<RankCategory, string> = {
+      "Top 10": "bg-red-100 text-red-700 border-red-200",
+      "Top 100": "bg-orange-100 text-orange-700 border-orange-200",
+      "Top 1000": "bg-amber-100 text-amber-700 border-amber-200",
+      "Top 10000": "bg-yellow-100 text-yellow-700 border-yellow-200",
+      "Qualifier": "bg-emerald-100 text-emerald-700 border-emerald-200",
+    };
+    return colorMap[category];
+  };
 
   // Only students that have a section assignment for this year
   const assigned = students.filter(s => s.section_mapping);
@@ -201,6 +555,14 @@ export default function StudentMappingPage() {
           {uploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FileSpreadsheet className="mr-2 h-4 w-4" />}
           Upload Excel
         </Button>
+        <Button
+          onClick={() => setAddingStudent(true)}
+          disabled={!yearId}
+          title={!yearId ? "Select a year first" : undefined}
+        >
+          <Plus className="mr-2 h-4 w-4" />
+          Add Student
+        </Button>
 
         <div className="ml-auto flex items-center gap-2">
           {/* Branch filter */}
@@ -276,13 +638,16 @@ export default function StudentMappingPage() {
                       <th className="text-left px-5 py-3 font-semibold text-muted-foreground whitespace-nowrap">Adm. No</th>
                       <th className="text-left px-4 py-3 font-semibold text-muted-foreground">Name</th>
                       <th className="text-left px-4 py-3 font-semibold text-muted-foreground">Phone</th>
+                      <th className="text-left px-4 py-3 font-semibold text-muted-foreground">Rank</th>
                       <th className="text-left px-4 py-3 font-semibold text-muted-foreground">Section Assignment</th>
                       <th className="text-left px-4 py-3 font-semibold text-muted-foreground">Status</th>
+                      <th className="text-center px-4 py-3 font-semibold text-muted-foreground whitespace-nowrap">Action</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y">
                     {filtered.map(s => {
                       const bs = s.section_mapping?.branch_section;
+                      const rankColor = getRankCategoryColor(s.rank_category);
                       return (
                         <tr key={s.id} className="hover:bg-muted/20 transition-colors">
                           <td className="px-5 py-3">
@@ -293,6 +658,15 @@ export default function StudentMappingPage() {
                           <td className="px-4 py-3 font-medium">{s.name}</td>
                           <td className="px-4 py-3 text-muted-foreground text-xs">
                             {s.phone ?? <span className="italic text-muted-foreground/50">—</span>}
+                          </td>
+                          <td className="px-4 py-3">
+                            {s.rank_category ? (
+                              <Badge className={`text-[11px] font-semibold border ${rankColor}`}>
+                                {s.rank_category}
+                              </Badge>
+                            ) : (
+                              <span className="text-xs text-muted-foreground/50 italic">—</span>
+                            )}
                           </td>
                           <td className="px-4 py-3">
                             {bs ? (
@@ -313,6 +687,17 @@ export default function StudentMappingPage() {
                               {s.is_active ? "Active" : "Inactive"}
                             </span>
                           </td>
+                          <td className="px-4 py-3 text-center">
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => setEditingStudent(s)}
+                              className="h-7 w-7 p-0"
+                              title="Edit student"
+                            >
+                              <Edit className="h-3.5 w-3.5" />
+                            </Button>
+                          </td>
                         </tr>
                       );
                     })}
@@ -326,6 +711,21 @@ export default function StudentMappingPage() {
 
       {uploadResult && (
         <UploadResultDialog result={uploadResult} onClose={() => setUploadResult(null)} />
+      )}
+
+      {editingStudent && (
+        <EditStudentModal
+          student={editingStudent}
+          onClose={() => setEditingStudent(null)}
+          onSave={(data) => updateStudentMutation.mutateAsync(data)}
+        />
+      )}
+
+      {addingStudent && (
+        <AddStudentModal
+          onClose={() => setAddingStudent(false)}
+          onSave={(data) => createStudentMutation.mutateAsync(data)}
+        />
       )}
     </div>
   );

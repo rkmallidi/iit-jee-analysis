@@ -20,6 +20,10 @@ from app.schemas.mapping import (
     FacultySubjectOut,
     PrincipalBranchCreate,
     PrincipalBranchOut,
+    VicePrincipalBranchCreate,
+    VicePrincipalBranchOut,
+    OperatorBranchCreate,
+    OperatorBranchOut,
     ProgramOverview,
 )
 
@@ -73,6 +77,38 @@ def remove_principal_branch(id: int, db: DbSession):
     obj = crud.get_principal_branch(db, id)
     if not obj: raise HTTPException(404, "Not found")
     crud.remove_principal_branch(db, obj)
+
+
+# ----- Vice-Principal ↔ Branch -----
+@router.get("/vice-principal-branches", response_model=list[VicePrincipalBranchOut])
+def list_vice_principal_branches(db: DbSession, _: CurrentUser):
+    return crud.get_vice_principal_branches(db)
+
+@router.post("/vice-principal-branches", response_model=VicePrincipalBranchOut, status_code=201, dependencies=[admin_only])
+def assign_vice_principal_branch(data: VicePrincipalBranchCreate, db: DbSession):
+    return crud.assign_vice_principal_branch(db, data.user_id, data.branch_id)
+
+@router.delete("/vice-principal-branches/{id}", status_code=204, dependencies=[admin_only])
+def remove_vice_principal_branch(id: int, db: DbSession):
+    obj = crud.get_vice_principal_branch(db, id)
+    if not obj: raise HTTPException(404, "Not found")
+    crud.remove_vice_principal_branch(db, obj)
+
+
+# ----- Operator ↔ Branch -----
+@router.get("/operator-branches", response_model=list[OperatorBranchOut])
+def list_operator_branches(db: DbSession, _: CurrentUser):
+    return crud.get_operator_branches(db)
+
+@router.post("/operator-branches", response_model=OperatorBranchOut, status_code=201, dependencies=[admin_only])
+def assign_operator_branch(data: OperatorBranchCreate, db: DbSession):
+    return crud.assign_operator_branch(db, data.user_id, data.branch_id)
+
+@router.delete("/operator-branches/{id}", status_code=204, dependencies=[admin_only])
+def remove_operator_branch(id: int, db: DbSession):
+    obj = crud.get_operator_branch(db, id)
+    if not obj: raise HTTPException(404, "Not found")
+    crud.remove_operator_branch(db, obj)
 
 
 # ----- Branch ↔ Program -----

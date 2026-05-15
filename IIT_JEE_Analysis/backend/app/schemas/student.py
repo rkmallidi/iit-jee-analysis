@@ -7,10 +7,19 @@ from pydantic import BaseModel
 from app.schemas.mapping import BranchSectionOut
 
 
+class RankCategoryEnum(str):
+    TOP_10 = "Top 10"
+    TOP_100 = "Top 100"
+    TOP_1000 = "Top 1000"
+    TOP_10000 = "Top 10000"
+    QUALIFIER = "Qualifier"
+
+
 class StudentBase(BaseModel):
     admission_no: str
     name: str
     phone: Optional[str] = None
+    rank_category: Optional[str] = None
     is_active: bool = True
 
 
@@ -21,6 +30,7 @@ class StudentCreate(StudentBase):
 class StudentUpdate(BaseModel):
     name: Optional[str] = None
     phone: Optional[str] = None
+    rank_category: Optional[str] = None
     is_active: Optional[bool] = None
 
 

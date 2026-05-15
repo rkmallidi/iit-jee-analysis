@@ -103,6 +103,56 @@ class PrincipalBranch(Base):
 
 
 # ---------------------------------------------------------------------------
+# VicePrincipalBranch — many-to-many Vice-Principal ↔ Branch
+# ---------------------------------------------------------------------------
+
+class VicePrincipalBranch(Base):
+    __tablename__ = "vice_principal_branches"
+    __table_args__ = (UniqueConstraint("user_id", "branch_id", name="uq_vice_principal_branch"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    branch_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("branches.id", ondelete="CASCADE"), nullable=False
+    )
+    assigned_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+
+    vice_principal: Mapped["User"] = relationship("User", back_populates="vice_principal_branches")  # type: ignore[name-defined]
+    branch: Mapped["Branch"] = relationship("Branch", back_populates="vice_principal_branches")  # type: ignore[name-defined]
+
+
+# ---------------------------------------------------------------------------
+# OperatorBranch — many-to-many Operator ↔ Branch
+# ---------------------------------------------------------------------------
+
+class OperatorBranch(Base):
+    __tablename__ = "operator_branches"
+    __table_args__ = (UniqueConstraint("user_id", "branch_id", name="uq_operator_branch"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    branch_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("branches.id", ondelete="CASCADE"), nullable=False
+    )
+    assigned_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+
+    operator: Mapped["User"] = relationship("User", back_populates="operator_branches")  # type: ignore[name-defined]
+    branch: Mapped["Branch"] = relationship("Branch", back_populates="operator_branches")  # type: ignore[name-defined]
+
+
+# ---------------------------------------------------------------------------
 # BranchProgram — many-to-many Branch ↔ Program
 # ---------------------------------------------------------------------------
 

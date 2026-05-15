@@ -13,7 +13,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.core.database import Base
 
 if TYPE_CHECKING:
-    from app.models.mapping import DeanBranch, FacultySection, FacultySubject, PrincipalBranch
+    from app.models.mapping import DeanBranch, FacultySection, FacultySubject, PrincipalBranch, VicePrincipalBranch, OperatorBranch
 
 
 class RoleName(str, enum.Enum):
@@ -80,6 +80,12 @@ class User(Base):
     )
     principal_branches: Mapped[List["PrincipalBranch"]] = relationship(
         "PrincipalBranch", back_populates="principal", cascade="all, delete-orphan"
+    )
+    vice_principal_branches: Mapped[List["VicePrincipalBranch"]] = relationship(
+        "VicePrincipalBranch", back_populates="vice_principal", cascade="all, delete-orphan"
+    )
+    operator_branches: Mapped[List["OperatorBranch"]] = relationship(
+        "OperatorBranch", back_populates="operator", cascade="all, delete-orphan"
     )
     faculty_sections: Mapped[List["FacultySection"]] = relationship(
         "FacultySection", back_populates="faculty", cascade="all, delete-orphan"
