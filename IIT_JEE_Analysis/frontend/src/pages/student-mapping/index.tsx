@@ -91,28 +91,6 @@ function EditStudentModal({ student, onClose, onSave }: { student: Student; onCl
   const classIds = getAvailableClasses(branchSections, selectedBranchId ? +selectedBranchId : null, selectedProgramId ? +selectedProgramId : null);
   const sectionOptions = getAvailableSections(branchSections, selectedBranchId ? +selectedBranchId : null, selectedProgramId ? +selectedProgramId : null, selectedClassId ? +selectedClassId : null);
 
-  // Reset dependent dropdowns when parent changes
-  useEffect(() => {
-    if (selectedBranchId && !programIds.includes(+selectedProgramId)) {
-      setSelectedProgramId("");
-      setSelectedClassId("");
-      setSelectedSectionId("");
-    }
-  }, [selectedBranchId, programIds, selectedProgramId]);
-
-  useEffect(() => {
-    if (selectedProgramId && !classIds.includes(+selectedClassId)) {
-      setSelectedClassId("");
-      setSelectedSectionId("");
-    }
-  }, [selectedProgramId, classIds, selectedClassId]);
-
-  useEffect(() => {
-    if (selectedClassId && !sectionOptions.some(s => s.id === +selectedSectionId)) {
-      setSelectedSectionId("");
-    }
-  }, [selectedClassId, sectionOptions, selectedSectionId]);
-
   const handleSave = async () => {
     if (!name.trim()) {
       toast({ title: "Name is required", variant: "destructive" });
@@ -307,28 +285,6 @@ function AddStudentModal({ onClose, onSave }: { onClose: () => void; onSave: (da
   const programIds = getAvailablePrograms(branchSections, selectedBranchId ? +selectedBranchId : null);
   const classIds = getAvailableClasses(branchSections, selectedBranchId ? +selectedBranchId : null, selectedProgramId ? +selectedProgramId : null);
   const sectionOptions = getAvailableSections(branchSections, selectedBranchId ? +selectedBranchId : null, selectedProgramId ? +selectedProgramId : null, selectedClassId ? +selectedClassId : null);
-
-  // Reset dependent dropdowns when parent changes
-  useEffect(() => {
-    if (selectedBranchId && !programIds.includes(+selectedProgramId)) {
-      setSelectedProgramId("");
-      setSelectedClassId("");
-      setSelectedSectionId("");
-    }
-  }, [selectedBranchId, programIds, selectedProgramId]);
-
-  useEffect(() => {
-    if (selectedProgramId && !classIds.includes(+selectedClassId)) {
-      setSelectedClassId("");
-      setSelectedSectionId("");
-    }
-  }, [selectedProgramId, classIds, selectedClassId]);
-
-  useEffect(() => {
-    if (selectedClassId && !sectionOptions.some(s => s.id === +selectedSectionId)) {
-      setSelectedSectionId("");
-    }
-  }, [selectedClassId, sectionOptions, selectedSectionId]);
 
   const handleSave = async () => {
     if (!admissionNo.trim() || !name.trim()) {
