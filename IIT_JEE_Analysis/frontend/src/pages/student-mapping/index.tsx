@@ -16,38 +16,42 @@ import {
   getAcademicYears, getStudents, getBranches,
   downloadSectionTemplate, uploadSectionExcel, updateStudent,
   getBranchSections, assignStudentSection, removeStudentSection,
-  getClasses, getPrograms, getSections, createStudent,
+  createStudent,
 } from "@/lib/api";
 import type { Branch, Student, UploadResult, RankCategory, BranchSection } from "@/types";
 
-// ── Helper to group sections ───────────────────────────────────────────────────
-type SectionGroup = {
-  branch: string;
-  program: string;
-  class_: string;
-  sections: Array<{ id: number; name: string }>;
-};
-
-function groupSectionsByHierarchy(branchSections: BranchSection[]): SectionGroup[] {
-  const groups = new Map<string, SectionGroup>();
-
+// ── Helper to organize sections for cascading dropdowns ──────────────────────
+function getAvailableBranches(branchSections: BranchSection[]) {
+  const branches = new Set<number>();
   branchSections.forEach(bs => {
-    const key = `${bs.branch?.name || ""}|${bs.program?.name || ""}|${bs.class_?.name || ""}`;
-    if (!groups.has(key)) {
-      groups.set(key, {
-        branch: bs.branch?.name || "",
-        program: bs.program?.name || "",
-        class_: bs.class_?.name || "",
-        sections: [],
-      });
-    }
-    const group = groups.get(key)!;
-    if (bs.section?.name) {
-      group.sections.push({ id: bs.id, name: bs.section.name });
-    }
+    if (bs.branch_id) branches.add(bs.branch_id);
   });
+  return Array.from(branches);
+}
 
-  return Array.from(groups.values());
+function getAvailablePrograms(branchSections: BranchSection[], branchId: number | null) {
+  if (!branchId) return [];
+  const programs = new Set<number>();
+  branchSections.forEach(bs => {
+    if (bs.branch_id === branchId && bs.program_id) programs.add(bs.program_id);
+  });
+  return Array.from(programs);
+}
+
+function getAvailableClasses(branchSections: BranchSection[], branchId: number | null, programId: number | null) {
+  if (!branchId || !programId) return [];
+  const classes = new Set<number>();
+  branchSections.forEach(bs => {
+    if (bs.branch_id === branchId && bs.program_id === programId && bs.class_id) classes.add(bs.class_id);
+  });
+  return Array.from(classes);
+}
+
+function getAvailableSections(branchSections: BranchSection[], branchId: number | null, programId: number | null, classId: number | null) {
+  if (!branchId || !programId || !classId) return [];
+  return branchSections.filter(bs =>
+    bs.branch_id === branchId && bs.program_id === programId && bs.class_id === classId
+  );
 }
 
 // ── Edit student modal ────────────────────────────────────────────────────────
@@ -57,8 +61,17 @@ function EditStudentModal({ student, onClose, onSave }: { student: Student; onCl
   const [phone, setPhone] = useState(student.phone ?? "");
   const [rankCategory, setRankCategory] = useState<string>(student.rank_category || "none");
   const [isActive, setIsActive] = useState(student.is_active);
-  const [selectedBranchSectionId, setSelectedBranchSectionId] = useState<string>(
-    student.section_mapping?.branch_section_id?.toString() || "unassigned"
+  const [selectedBranchId, setSelectedBranchId] = useState<string>(
+    student.section_mapping?.branch_section?.branch_id?.toString() || ""
+  );
+  const [selectedProgramId, setSelectedProgramId] = useState<string>(
+    student.section_mapping?.branch_section?.program_id?.toString() || ""
+  );
+  const [selectedClassId, setSelectedClassId] = useState<string>(
+    student.section_mapping?.branch_section?.class_id?.toString() || ""
+  );
+  const [selectedSectionId, setSelectedSectionId] = useState<string>(
+    student.section_mapping?.branch_section_id?.toString() || ""
   );
   const [saving, setSaving] = useState(false);
 
@@ -71,7 +84,34 @@ function EditStudentModal({ student, onClose, onSave }: { student: Student; onCl
   });
 
   const currentSection = student.section_mapping?.branch_section;
-  const groupedSections = groupSectionsByHierarchy(branchSections);
+
+  // Build unique lists for each dropdown
+  const branchIds = getAvailableBranches(branchSections);
+  const programIds = getAvailablePrograms(branchSections, selectedBranchId ? +selectedBranchId : null);
+  const classIds = getAvailableClasses(branchSections, selectedBranchId ? +selectedBranchId : null, selectedProgramId ? +selectedProgramId : null);
+  const sectionOptions = getAvailableSections(branchSections, selectedBranchId ? +selectedBranchId : null, selectedProgramId ? +selectedProgramId : null, selectedClassId ? +selectedClassId : null);
+
+  // Reset dependent dropdowns when parent changes
+  useEffect(() => {
+    if (selectedBranchId && !programIds.includes(+selectedProgramId)) {
+      setSelectedProgramId("");
+      setSelectedClassId("");
+      setSelectedSectionId("");
+    }
+  }, [selectedBranchId, programIds, selectedProgramId]);
+
+  useEffect(() => {
+    if (selectedProgramId && !classIds.includes(+selectedClassId)) {
+      setSelectedClassId("");
+      setSelectedSectionId("");
+    }
+  }, [selectedProgramId, classIds, selectedClassId]);
+
+  useEffect(() => {
+    if (selectedClassId && !sectionOptions.some(s => s.id === +selectedSectionId)) {
+      setSelectedSectionId("");
+    }
+  }, [selectedClassId, sectionOptions, selectedSectionId]);
 
   const handleSave = async () => {
     if (!name.trim()) {
@@ -80,7 +120,7 @@ function EditStudentModal({ student, onClose, onSave }: { student: Student; onCl
     }
     setSaving(true);
     try {
-      const newBranchSectionId = selectedBranchSectionId === "unassigned" ? null : parseInt(selectedBranchSectionId);
+      const newBranchSectionId = selectedSectionId ? parseInt(selectedSectionId) : null;
       const oldBranchSectionId = student.section_mapping?.branch_section_id;
 
       await onSave({
@@ -144,28 +184,80 @@ function EditStudentModal({ student, onClose, onSave }: { student: Student; onCl
               </SelectContent>
             </Select>
           </div>
-          <div className="grid gap-2">
-            <label htmlFor="section" className="text-sm font-medium">Section Assignment</label>
+          <div className="space-y-3">
+            <p className="text-sm font-medium">Section Assignment</p>
             {currentSection && (
-              <p className="text-xs text-muted-foreground mb-1">
+              <p className="text-xs text-muted-foreground">
                 Current: {currentSection.branch?.name} • {currentSection.program?.name} • {currentSection.class_?.name} • {currentSection.section?.name}
               </p>
             )}
-            <Select value={selectedBranchSectionId} onValueChange={setSelectedBranchSectionId}>
-              <SelectTrigger id="section">
-                <SelectValue placeholder="Select new section (optional)" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="unassigned">Unassigned</SelectItem>
-                {groupedSections.map((group) =>
-                  group.sections.map(section => (
-                    <SelectItem key={section.id} value={section.id.toString()}>
-                      <span className="text-xs">{group.branch} • {group.program} • {group.class_} / <strong>{section.name}</strong></span>
-                    </SelectItem>
-                  ))
-                )}
-              </SelectContent>
-            </Select>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="grid gap-1">
+                <label htmlFor="branch" className="text-xs font-medium text-muted-foreground">Branch</label>
+                <Select value={selectedBranchId} onValueChange={setSelectedBranchId}>
+                  <SelectTrigger id="branch" className="h-8 text-xs">
+                    <SelectValue placeholder="Select branch" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">Clear</SelectItem>
+                    {branchIds.map(id => {
+                      const branch = branchSections.find(bs => bs.branch_id === id)?.branch;
+                      return branch ? (
+                        <SelectItem key={id} value={id.toString()}>{branch.name}</SelectItem>
+                      ) : null;
+                    })}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid gap-1">
+                <label htmlFor="program" className="text-xs font-medium text-muted-foreground">Program</label>
+                <Select value={selectedProgramId} onValueChange={setSelectedProgramId} disabled={!selectedBranchId}>
+                  <SelectTrigger id="program" className="h-8 text-xs">
+                    <SelectValue placeholder="Select program" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">Clear</SelectItem>
+                    {programIds.map(id => {
+                      const program = branchSections.find(bs => bs.program_id === id)?.program;
+                      return program ? (
+                        <SelectItem key={id} value={id.toString()}>{program.name}</SelectItem>
+                      ) : null;
+                    })}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid gap-1">
+                <label htmlFor="class" className="text-xs font-medium text-muted-foreground">Class</label>
+                <Select value={selectedClassId} onValueChange={setSelectedClassId} disabled={!selectedProgramId}>
+                  <SelectTrigger id="class" className="h-8 text-xs">
+                    <SelectValue placeholder="Select class" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">Clear</SelectItem>
+                    {classIds.map(id => {
+                      const cls = branchSections.find(bs => bs.class_id === id)?.class_;
+                      return cls ? (
+                        <SelectItem key={id} value={id.toString()}>{cls.name}</SelectItem>
+                      ) : null;
+                    })}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid gap-1">
+                <label htmlFor="sec" className="text-xs font-medium text-muted-foreground">Section</label>
+                <Select value={selectedSectionId} onValueChange={setSelectedSectionId} disabled={!selectedClassId}>
+                  <SelectTrigger id="sec" className="h-8 text-xs">
+                    <SelectValue placeholder="Select section" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">Clear</SelectItem>
+                    {sectionOptions.map(bs => (
+                      <SelectItem key={bs.id} value={bs.id.toString()}>{bs.section?.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
           </div>
           <div className="flex items-center space-x-2">
             <input
@@ -198,7 +290,10 @@ function AddStudentModal({ onClose, onSave }: { onClose: () => void; onSave: (da
   const [admissionNo, setAdmissionNo] = useState("");
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
-  const [selectedBranchSectionId, setSelectedBranchSectionId] = useState<string>("unassigned");
+  const [selectedBranchId, setSelectedBranchId] = useState<string>("");
+  const [selectedProgramId, setSelectedProgramId] = useState<string>("");
+  const [selectedClassId, setSelectedClassId] = useState<string>("");
+  const [selectedSectionId, setSelectedSectionId] = useState<string>("");
   const [saving, setSaving] = useState(false);
 
   const { data: branchSections = [] } = useQuery({
@@ -207,7 +302,33 @@ function AddStudentModal({ onClose, onSave }: { onClose: () => void; onSave: (da
     enabled: !!selectedYear?.id,
   });
 
-  const groupedSections = groupSectionsByHierarchy(branchSections);
+  // Build unique lists for each dropdown
+  const branchIds = getAvailableBranches(branchSections);
+  const programIds = getAvailablePrograms(branchSections, selectedBranchId ? +selectedBranchId : null);
+  const classIds = getAvailableClasses(branchSections, selectedBranchId ? +selectedBranchId : null, selectedProgramId ? +selectedProgramId : null);
+  const sectionOptions = getAvailableSections(branchSections, selectedBranchId ? +selectedBranchId : null, selectedProgramId ? +selectedProgramId : null, selectedClassId ? +selectedClassId : null);
+
+  // Reset dependent dropdowns when parent changes
+  useEffect(() => {
+    if (selectedBranchId && !programIds.includes(+selectedProgramId)) {
+      setSelectedProgramId("");
+      setSelectedClassId("");
+      setSelectedSectionId("");
+    }
+  }, [selectedBranchId, programIds, selectedProgramId]);
+
+  useEffect(() => {
+    if (selectedProgramId && !classIds.includes(+selectedClassId)) {
+      setSelectedClassId("");
+      setSelectedSectionId("");
+    }
+  }, [selectedProgramId, classIds, selectedClassId]);
+
+  useEffect(() => {
+    if (selectedClassId && !sectionOptions.some(s => s.id === +selectedSectionId)) {
+      setSelectedSectionId("");
+    }
+  }, [selectedClassId, sectionOptions, selectedSectionId]);
 
   const handleSave = async () => {
     if (!admissionNo.trim() || !name.trim()) {
@@ -220,7 +341,7 @@ function AddStudentModal({ onClose, onSave }: { onClose: () => void; onSave: (da
         admission_no: admissionNo.trim(),
         name: name.trim(),
         phone: phone.trim() || null,
-        branch_section_id: selectedBranchSectionId === "unassigned" ? null : parseInt(selectedBranchSectionId),
+        branch_section_id: selectedSectionId ? parseInt(selectedSectionId) : null,
       });
     } finally {
       setSaving(false);
@@ -262,23 +383,75 @@ function AddStudentModal({ onClose, onSave }: { onClose: () => void; onSave: (da
               placeholder="+91 9876543210"
             />
           </div>
-          <div className="grid gap-2">
-            <label htmlFor="sec" className="text-sm font-medium">Section Assignment</label>
-            <Select value={selectedBranchSectionId} onValueChange={setSelectedBranchSectionId}>
-              <SelectTrigger id="sec">
-                <SelectValue placeholder="Select section (optional)" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="unassigned">Unassigned</SelectItem>
-                {groupedSections.map((group) =>
-                  group.sections.map(section => (
-                    <SelectItem key={section.id} value={section.id.toString()}>
-                      <span className="text-xs">{group.branch} • {group.program} • {group.class_} / <strong>{section.name}</strong></span>
-                    </SelectItem>
-                  ))
-                )}
-              </SelectContent>
-            </Select>
+          <div className="space-y-3">
+            <p className="text-sm font-medium">Section Assignment</p>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="grid gap-1">
+                <label htmlFor="ab" className="text-xs font-medium text-muted-foreground">Branch</label>
+                <Select value={selectedBranchId} onValueChange={setSelectedBranchId}>
+                  <SelectTrigger id="ab" className="h-8 text-xs">
+                    <SelectValue placeholder="Select branch" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">Clear</SelectItem>
+                    {branchIds.map(id => {
+                      const branch = branchSections.find(bs => bs.branch_id === id)?.branch;
+                      return branch ? (
+                        <SelectItem key={id} value={id.toString()}>{branch.name}</SelectItem>
+                      ) : null;
+                    })}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid gap-1">
+                <label htmlFor="ap" className="text-xs font-medium text-muted-foreground">Program</label>
+                <Select value={selectedProgramId} onValueChange={setSelectedProgramId} disabled={!selectedBranchId}>
+                  <SelectTrigger id="ap" className="h-8 text-xs">
+                    <SelectValue placeholder="Select program" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">Clear</SelectItem>
+                    {programIds.map(id => {
+                      const program = branchSections.find(bs => bs.program_id === id)?.program;
+                      return program ? (
+                        <SelectItem key={id} value={id.toString()}>{program.name}</SelectItem>
+                      ) : null;
+                    })}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid gap-1">
+                <label htmlFor="ac" className="text-xs font-medium text-muted-foreground">Class</label>
+                <Select value={selectedClassId} onValueChange={setSelectedClassId} disabled={!selectedProgramId}>
+                  <SelectTrigger id="ac" className="h-8 text-xs">
+                    <SelectValue placeholder="Select class" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">Clear</SelectItem>
+                    {classIds.map(id => {
+                      const cls = branchSections.find(bs => bs.class_id === id)?.class_;
+                      return cls ? (
+                        <SelectItem key={id} value={id.toString()}>{cls.name}</SelectItem>
+                      ) : null;
+                    })}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid gap-1">
+                <label htmlFor="as" className="text-xs font-medium text-muted-foreground">Section</label>
+                <Select value={selectedSectionId} onValueChange={setSelectedSectionId} disabled={!selectedClassId}>
+                  <SelectTrigger id="as" className="h-8 text-xs">
+                    <SelectValue placeholder="Select section" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">Clear</SelectItem>
+                    {sectionOptions.map(bs => (
+                      <SelectItem key={bs.id} value={bs.id.toString()}>{bs.section?.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
           </div>
         </div>
         <DialogFooter>
