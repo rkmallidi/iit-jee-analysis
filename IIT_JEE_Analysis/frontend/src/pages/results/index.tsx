@@ -1,33 +1,27 @@
 import { useState, useEffect } from "react";
-import { useQuery } from "@tanstack/react-query";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { useAcademicYearStore } from "@/store/academicYear";
 import {
-  Upload, Trash2, Users, Building2, Loader2,
+  Upload, Users, Building2, Loader2,
   CheckCircle2, XCircle, GraduationCap, ShieldCheck,
-  CalendarDays, BookOpen, FileText,
+  CalendarDays, BookOpen, FileText, AlertTriangle, Eraser,
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { getAcademicYears, getExams, getExamDetail, getPrograms, getClasses, clearExamResults } from "@/lib/api";
 import { toast } from "@/hooks/use-toast";
-import { getAcademicYears, getExams, getExamDetail, getPrograms, getClasses } from "@/lib/api";
 import OMRUploadDialog from "@/components/exams/OMRUploadDialog";
-import type { Exam, ExamDetail, BranchDetail, BranchSectionDetail } from "@/types";
+import type { Exam, ExamDetail, BranchDetail, BranchSectionDetail, UploadLog } from "@/types";
 import { cn } from "@/lib/utils";
+import { useAuthStore } from "@/store/auth";
 
 // ── small helpers ──────────────────────────────────────────────────────────────
 const fmt = (d: string) =>
   new Date(d).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
-
-// paper row colors
-const PAPER_STYLE: Record<string, string> = {
-  P1: "bg-emerald-50 border-emerald-200 text-emerald-800",
-  P1_mains: "bg-sky-50 border-sky-200 text-sky-800",
-  P2: "bg-amber-50 border-amber-200 text-amber-800",
-};
 
 // ── students popup ─────────────────────────────────────────────────────────────
 interface StudentsDialogProps {
@@ -75,165 +69,174 @@ function StudentsDialog({ section, branchName, onClose }: StudentsDialogProps) {
   );
 }
 
-// ── branch panel ───────────────────────────────────────────────────────────────
-interface BranchPanelProps {
+// ── per-branch upload summary panel ───────────────────────────────────────────
+interface BranchUploadPanelProps {
+  paper: Exam;
   branch: BranchDetail;
-  examDetail: ExamDetail;
-  uploadedPapers: Set<string>;
-  onUpload: (paper: "P1" | "P2") => void;
-  onClear: (key: string) => void;
+  log: UploadLog | undefined;
+  onUpload: () => void;
+  onClear: () => void;
   onShowStudents: (section: BranchSectionDetail) => void;
 }
-function BranchPanel({ branch, examDetail, uploadedPapers, onUpload, onClear, onShowStudents }: BranchPanelProps) {
-  if (branch.sections.length === 0) {
-    return (
-      <div className="flex items-center gap-2 py-4 text-sm text-muted-foreground italic">
-        <XCircle className="h-4 w-4 text-muted-foreground/40 shrink-0" />
-        No sections configured for this program &amp; class in this branch.
-      </div>
-    );
-  }
+function BranchUploadPanel({ paper: _paper, branch, log, onUpload, onClear, onShowStudents }: BranchUploadPanelProps) {
+  const totalStudents = branch.sections.reduce((s, sec) => s + sec.student_count, 0);
 
   return (
-    <div>
-      <div className="rounded-lg border overflow-hidden">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="bg-muted/40 border-b">
-              <th className="text-left px-4 py-2.5 text-xs font-semibold text-muted-foreground w-28">Section</th>
-              <th className="text-center px-4 py-2.5 text-xs font-semibold text-muted-foreground w-28">Students</th>
-              {examDetail.exam_type === "Mains" ? (
-                <th className="text-center px-4 py-2.5 text-xs font-semibold text-sky-700">P1 Upload</th>
-              ) : (
-                <>
-                  <th className="text-center px-4 py-2.5 text-xs font-semibold text-emerald-700">P1 Upload</th>
-                  <th className="text-center px-4 py-2.5 text-xs font-semibold text-amber-700">P2 Upload</th>
-                </>
-              )}
-            </tr>
-          </thead>
-          <tbody className="divide-y">
-            {branch.sections.map((section, idx) => {
-              const p1Key = `${branch.id}-${section.section_name}-P1`;
-              const p2Key = `${branch.id}-${section.section_name}-P2`;
-              const p1Done = uploadedPapers.has(p1Key);
-              const p2Done = uploadedPapers.has(p2Key);
-
-              return (
-                <tr key={idx} className="hover:bg-muted/20 transition-colors">
-                  {/* Section name */}
-                  <td className="px-4 py-3">
-                    <span className="font-semibold text-sm">{section.section_name}</span>
-                  </td>
-
-                  {/* Student count - clickable */}
-                  <td className="px-4 py-3 text-center">
-                    <button
-                      onClick={() => onShowStudents(section)}
-                      className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold bg-slate-100 hover:bg-blue-100 hover:text-blue-700 transition-colors border border-transparent hover:border-blue-200"
-                    >
-                      <Users className="h-3 w-3" />
-                      {section.student_count}
-                    </button>
-                  </td>
-
-                  {/* P1 */}
-                  <td className="px-4 py-3">
-                    <div className={cn(
-                      "flex items-center justify-between rounded px-2.5 py-1.5 border text-xs",
-                      examDetail.exam_type === "Mains" ? PAPER_STYLE.P1_mains : PAPER_STYLE.P1
-                    )}>
-                      <div className="flex items-center gap-1.5">
-                        {p1Done
-                          ? <CheckCircle2 className="h-3.5 w-3.5 text-green-600 shrink-0" />
-                          : <XCircle className="h-3.5 w-3.5 text-muted-foreground/40 shrink-0" />}
-                        <span className={p1Done ? "text-green-700 font-medium" : "text-muted-foreground"}>
-                          {p1Done ? "Done" : "Pending"}
-                        </span>
-                      </div>
-                      <div className="flex gap-1 ml-2">
-                        <button
-                          onClick={() => onUpload("P1")}
-                          className="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-semibold bg-white/80 border hover:bg-white transition-colors"
-                        >
-                          <Upload className="h-2.5 w-2.5" />
-                          {p1Done ? "Re-upload" : "Upload"}
-                        </button>
-                        {p1Done && (
-                          <button
-                            onClick={() => onClear(p1Key)}
-                            className="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-semibold bg-white/80 border border-red-200 text-red-600 hover:bg-red-50 transition-colors"
-                          >
-                            <Trash2 className="h-2.5 w-2.5" />
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  </td>
-
-                  {/* P2 (Advanced only) */}
-                  {examDetail.exam_type === "Advanced" && (
-                    <td className="px-4 py-3">
-                      <div className={cn("flex items-center justify-between rounded px-2.5 py-1.5 border text-xs", PAPER_STYLE.P2)}>
-                        <div className="flex items-center gap-1.5">
-                          {p2Done
-                            ? <CheckCircle2 className="h-3.5 w-3.5 text-green-600 shrink-0" />
-                            : <XCircle className="h-3.5 w-3.5 text-muted-foreground/40 shrink-0" />}
-                          <span className={p2Done ? "text-green-700 font-medium" : "text-muted-foreground"}>
-                            {p2Done ? "Done" : "Pending"}
-                          </span>
-                        </div>
-                        <div className="flex gap-1 ml-2">
-                          <button
-                            onClick={() => onUpload("P2")}
-                            className="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-semibold bg-white/80 border hover:bg-white transition-colors"
-                          >
-                            <Upload className="h-2.5 w-2.5" />
-                            {p2Done ? "Re-upload" : "Upload"}
-                          </button>
-                          {p2Done && (
-                            <button
-                              onClick={() => onClear(p2Key)}
-                              className="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-semibold bg-white/80 border border-red-200 text-red-600 hover:bg-red-50 transition-colors"
-                            >
-                              <Trash2 className="h-2.5 w-2.5" />
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    </td>
-                  )}
-                </tr>
-              );
-            })}
-          </tbody>
-          <tfoot>
-            <tr className="bg-muted/20 border-t">
-              <td className="px-4 py-2 text-xs font-semibold text-muted-foreground">{branch.sections.length} section{branch.sections.length !== 1 ? "s" : ""}</td>
-              <td className="px-4 py-2 text-center text-xs font-semibold text-muted-foreground">{branch.sections.reduce((s, sec) => s + sec.student_count, 0)} total</td>
-              {examDetail.exam_type === "Mains"
-                ? <td />
-                : <><td /><td /></>}
-            </tr>
-          </tfoot>
-        </table>
+    <Card key={branch.id} className="border-0 overflow-hidden shadow-sm">
+      {/* Branch header */}
+      <div className="flex items-center justify-between gap-4 px-5 py-3 bg-gradient-to-r from-indigo-600 to-blue-600">
+        <div className="flex items-center gap-2 shrink-0">
+          <Building2 className="h-4 w-4 text-white/70 shrink-0" />
+          <span className="font-bold text-white text-sm">{branch.name}</span>
+          <span className="text-xs text-white/50 font-mono">{branch.code}</span>
+        </div>
+        <div className="flex items-center gap-5">
+          {[
+            { icon: ShieldCheck,   label: "Principal", person: branch.principal },
+            { icon: GraduationCap, label: "Dean",      person: branch.dean },
+            { icon: Users,          label: "Operator",  person: branch.operator },
+          ].map(({ icon: Icon, label, person }) => (
+            <div key={label} className="flex items-center gap-1.5 text-xs">
+              <Icon className="h-3.5 w-3.5 text-white/60 shrink-0" />
+              <span className="text-white/60 font-medium">{label}:</span>
+              <span className="font-semibold text-white">
+                {person ? person.full_name : <span className="italic text-white/30">—</span>}
+              </span>
+            </div>
+          ))}
+        </div>
       </div>
-    </div>
+
+      <CardContent className="px-5 py-4 space-y-3">
+        {/* Sections row */}
+        <div>
+          <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">
+            Sections · {totalStudents} students
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            {branch.sections.map((section, idx) => (
+              <button
+                key={idx}
+                onClick={() => onShowStudents(section)}
+                className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium bg-slate-100 hover:bg-blue-100 hover:text-blue-700 border border-slate-200 hover:border-blue-300 transition-colors"
+              >
+                {section.section_name}
+                <span className="flex items-center gap-0.5 text-muted-foreground text-[10px]">
+                  <Users className="h-2.5 w-2.5" />{section.student_count}
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Upload status for this branch */}
+        {log ? (
+          <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 space-y-2">
+            {/* Header row */}
+            <div className="flex items-center gap-2">
+              <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
+              <span className="text-sm font-semibold text-emerald-800 truncate" title={log.file_name}>
+                {log.file_name || "OMR file"}
+              </span>
+              <span className="text-[10px] text-muted-foreground ml-1">
+                {new Date(log.uploaded_at).toLocaleString("en-IN", {
+                  day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit",
+                })}
+              </span>
+              <button
+                onClick={onClear}
+                title="Clear results for this branch"
+                className="ml-auto flex items-center gap-1 text-[11px] font-semibold text-red-500 hover:text-red-700 hover:bg-red-50 rounded px-2 py-0.5 transition-colors"
+              >
+                <Eraser className="h-3 w-3" />
+                Clear
+              </button>
+            </div>
+
+            {/* Stats row */}
+            <div className="flex items-center gap-4 ml-6">
+              <div className="flex items-center gap-1.5 text-[12px] font-semibold text-emerald-700">
+                <CheckCircle2 className="h-3.5 w-3.5" />
+                {log.valid_count} uploaded
+              </div>
+              {log.absent_count > 0 && (
+                <div className="flex items-center gap-1.5 text-[12px] font-semibold text-amber-600">
+                  <AlertTriangle className="h-3.5 w-3.5" />
+                  {log.absent_count} absent
+                </div>
+              )}
+              {log.duplicate_count > 0 && (
+                <div className="flex items-center gap-1.5 text-[12px] font-semibold text-red-600">
+                  <XCircle className="h-3.5 w-3.5" />
+                  {log.duplicate_count} duplicate
+                </div>
+              )}
+              {log.invalid_count > 0 && (
+                <div className="flex items-center gap-1.5 text-[12px] font-semibold text-red-600">
+                  <XCircle className="h-3.5 w-3.5" />
+                  {log.invalid_count} invalid
+                </div>
+              )}
+            </div>
+
+            {/* Absent list */}
+            {log.absent_list.length > 0 && (
+              <div className="ml-6 text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
+                <span className="font-semibold">Absent: </span>
+                {log.absent_list.slice(0, 10).join(", ")}
+                {log.absent_list.length > 10 && (
+                  <span className="italic text-amber-600"> +{log.absent_list.length - 10} more</span>
+                )}
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-3 flex items-center justify-between gap-4">
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <XCircle className="h-4 w-4 text-muted-foreground/30" />
+              No OMR results uploaded yet
+            </div>
+            <button
+              onClick={onUpload}
+              className="inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold bg-blue-600 text-white hover:bg-blue-700 transition-colors shadow-sm"
+            >
+              <Upload className="h-3 w-3" />
+              Upload OMR File
+            </button>
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
 // ── main page ──────────────────────────────────────────────────────────────────
 export default function ResultsPage() {
   const navigate = useNavigate();
+  const qc = useQueryClient();
   const [searchParams] = useSearchParams();
   const { selectedYear, setSelectedYear } = useAcademicYearStore();
+  const { isAdmin, branchIds } = useAuthStore();
   const examIdParam = searchParams.get("exam");
   const examId = examIdParam ? parseInt(examIdParam) : null;
   const yearId = selectedYear?.id;
 
-  const [omrTarget, setOmrTarget] = useState<Exam | null>(null);
-  const [uploadedPapers, setUploadedPapers] = useState<Set<string>>(new Set());
+  // omrTarget = { exam, branchId, branchName }
+  const [omrTarget, setOmrTarget] = useState<{ exam: Exam; branchId: number; branchName: string } | null>(null);
   const [studentsPopup, setStudentsPopup] = useState<{ section: BranchSectionDetail; branchName: string } | null>(null);
+
+  const clearBranchMut = useMutation({
+    mutationFn: ({ paperId, branchId }: { paperId: number; branchId: number }) =>
+      clearExamResults(paperId, branchId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["exam-detail", examId] });
+      qc.invalidateQueries({ queryKey: ["exams", yearId] });
+      toast({ title: "Branch results cleared" });
+    },
+    onError: (err: any) => {
+      toast({ title: err?.response?.data?.detail ?? "Clear failed", variant: "destructive" });
+    },
+  });
 
   const { data: years = [] } = useQuery({
     queryKey: ["academic-years"],
@@ -247,7 +250,6 @@ export default function ResultsPage() {
     }
   }, [years, selectedYear, setSelectedYear]);
 
-  // Programs and classes lookup
   const { data: programs = [] } = useQuery({
     queryKey: ["programs"],
     queryFn: () => getPrograms().then(r => r.data),
@@ -258,63 +260,57 @@ export default function ResultsPage() {
     queryFn: () => getClasses().then(r => r.data),
   });
 
-  // All exams for the selected year — for the exam selector
   const { data: allExams = [], isLoading: examsLoading } = useQuery<Exam[]>({
     queryKey: ["exams", yearId],
     queryFn: () => getExams({ academic_year_id: yearId }).then(r => r.data),
     enabled: !!yearId,
   });
 
-  // Deduplicate to one entry per logical exam (same code+program+class), sorted by date desc
+  // Deduplicate to one entry per logical exam (same code+program+class), published only, sorted by date desc
   const uniqueExams = allExams
+    .filter(e => e.status === "published")
     .filter((e, idx, arr) =>
       arr.findIndex(x => x.exam_code === e.exam_code && x.program_id === e.program_id && x.class_id === e.class_id) === idx
     )
     .sort((a, b) => new Date(b.exam_date).getTime() - new Date(a.exam_date).getTime());
 
-  const { data: examDetail, isLoading: examLoading } = useQuery({
+  const { data: examDetail, isLoading: examLoading } = useQuery<ExamDetail>({
     queryKey: ["exam-detail", examId],
     queryFn: () => examId ? getExamDetail(examId).then(r => r.data) : null,
     enabled: !!examId,
   });
 
-  const handleClear = (key: string) => {
-    setUploadedPapers(prev => { const s = new Set(prev); s.delete(key); return s; });
-    toast({ title: "Results cleared" });
-  };
+  // Papers for the selected exam
+  const examPapers = examDetail
+    ? allExams.filter(e =>
+        e.exam_code === examDetail.exam_code &&
+        e.status === "published"
+      )
+    : [];
 
-  const makeVirtualExam = (paper: "P1" | "P2"): Exam => ({
-    id: examDetail!.id,
-    academic_year_id: 0,
-    program_id: 0,
-    class_id: 0,
-    exam_code: examDetail!.exam_code,
-    exam_type: examDetail!.exam_type,
-    paper,
-    exam_date: examDetail!.exam_date,
-    created_at: "",
-    updated_at: "",
-    question_count: 0,
-  });
+  // Build a map: paper → branch_id → UploadLog
+  const uploadLogMap: Record<string, Record<number, UploadLog>> = {};
+  for (const paper of examPapers) {
+    uploadLogMap[paper.paper] = {};
+    for (const log of paper.upload_logs) {
+      uploadLogMap[paper.paper][log.branch_id] = log;
+    }
+  }
 
   const selectExam = (id: string) => {
     navigate(`/results?exam=${id}`);
-    setUploadedPapers(new Set());
   };
 
   // ── Shared top bar (always visible) ─────────────────────────────────────────
   const TopBar = () => (
     <div className="space-y-3">
-      {/* Title and Selectors — single line */}
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
           <h2 className="text-xl font-bold">OMR Results Upload</h2>
           <p className="text-sm text-muted-foreground">Upload OMR scan results per exam paper and branch.</p>
         </div>
 
-        {/* Year and Exam selectors */}
         <div className="flex items-center gap-2 flex-wrap">
-          {/* Academic year picker */}
           <Select
             value={selectedYear ? String(selectedYear.id) : ""}
             onValueChange={v => { const yr = years.find(y => y.id === +v); if (yr) setSelectedYear(yr); }}
@@ -327,7 +323,6 @@ export default function ResultsPage() {
             </SelectContent>
           </Select>
 
-          {/* Exam picker with Program and Class badges in trigger */}
           <Select
             value={examId ? String(examId) : ""}
             onValueChange={selectExam}
@@ -350,7 +345,6 @@ export default function ResultsPage() {
             </SelectTrigger>
             <SelectContent>
               {uniqueExams.map(e => {
-                const fullExam = allExams.find(x => x.id === e.id);
                 const prog = programs.find(p => p.id === e.program_id);
                 const cls = classes.find(c => c.id === e.class_id);
                 return (
@@ -371,7 +365,7 @@ export default function ResultsPage() {
                 );
               })}
               {uniqueExams.length === 0 && !examsLoading && (
-                <div className="px-3 py-2 text-xs text-muted-foreground italic">No exams for this year</div>
+                <div className="px-3 py-2 text-xs text-muted-foreground italic">No published exams for this year</div>
               )}
             </SelectContent>
           </Select>
@@ -438,125 +432,125 @@ export default function ResultsPage() {
     );
   }
 
+  const configuredBranches = examDetail.branches
+    .filter(b => b.sections.length > 0)
+    .filter(b => isAdmin() || branchIds.includes(b.id));
+  const totalStudents = configuredBranches.reduce((sum, branch) =>
+    sum + branch.sections.reduce((s, sec) => s + sec.student_count, 0), 0
+  );
+
   // ── Exam selected ────────────────────────────────────────────────────────────
   return (
     <div className="space-y-4">
       <TopBar />
 
       {/* Exam summary bar */}
-      {(() => {
-        const totalStudents = examDetail.branches.reduce((sum, branch) =>
-          sum + branch.sections.reduce((s, sec) => s + sec.student_count, 0), 0
-        );
-        return (
-          <div className={cn(
-            "rounded-xl border px-5 py-4 flex flex-wrap items-center gap-x-8 gap-y-3",
-            examDetail.exam_type === "Mains"
-              ? "bg-gradient-to-r from-blue-50 to-slate-50 border-blue-200"
-              : "bg-gradient-to-r from-violet-50 to-slate-50 border-violet-200"
-          )}>
-            <div>
-              <div className={cn("text-[10px] font-bold uppercase tracking-wider",
-                examDetail.exam_type === "Mains" ? "text-blue-500" : "text-violet-500")}>
-                Exam Code
-              </div>
-              <div className={cn("font-mono text-xl font-bold mt-0.5",
-                examDetail.exam_type === "Mains" ? "text-blue-800" : "text-violet-800")}>
-                {examDetail.exam_code}
-              </div>
-            </div>
-            <div>
-              <div className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1">
-                <CalendarDays className="h-3 w-3" /> Date
-              </div>
-              <div className="text-sm font-semibold mt-0.5">{fmt(examDetail.exam_date)}</div>
-            </div>
-            <div>
-              <div className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1">
-                <BookOpen className="h-3 w-3" /> Program
-              </div>
-              <div className="text-sm font-semibold mt-0.5">{examDetail.program_name}</div>
-            </div>
-            <div>
-              <div className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Class</div>
-              <div className="text-sm font-semibold mt-0.5">{examDetail.class_name}</div>
-            </div>
-            <div className="ml-auto flex items-center gap-6">
-              <div>
-                <div className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1">
-                  <Users className="h-3 w-3" /> Total Students
-                </div>
-                <div className="text-sm font-semibold mt-0.5">{totalStudents}</div>
-              </div>
-              <Badge
-                variant="outline"
-                className={cn("text-sm px-3 py-1 h-fit",
-                  examDetail.exam_type === "Mains"
-                    ? "bg-blue-100 text-blue-800 border-blue-300"
-                    : "bg-violet-100 text-violet-800 border-violet-300"
-                )}
-              >
-                {examDetail.exam_type} · {examDetail.exam_type === "Advanced" ? "P1 + P2" : "P1"}
-              </Badge>
-            </div>
+      <div className={cn(
+        "rounded-xl border px-5 py-4 flex flex-wrap items-center gap-x-8 gap-y-3",
+        examDetail.exam_type === "Mains"
+          ? "bg-gradient-to-r from-blue-50 to-slate-50 border-blue-200"
+          : "bg-gradient-to-r from-violet-50 to-slate-50 border-violet-200"
+      )}>
+        <div>
+          <div className={cn("text-[10px] font-bold uppercase tracking-wider",
+            examDetail.exam_type === "Mains" ? "text-blue-500" : "text-violet-500")}>
+            Exam Code
           </div>
-        );
-      })()}
-
-      {/* Branch panels */}
-      <div className="space-y-3">
-        {examDetail.branches.map(branch => {
-          const total = branch.sections.reduce((s, sec) => s + sec.student_count, 0);
-          return (
-            <Card key={branch.id} className="border-slate-200 overflow-hidden shadow-sm">
-              {/* Compact dark header */}
-              <div className="bg-gradient-to-r from-slate-700 to-slate-800 px-4 py-2.5 flex flex-wrap items-center gap-x-4 gap-y-1.5">
-                <div className="flex items-center gap-2 min-w-0">
-                  <Building2 className="h-4 w-4 text-white/70 shrink-0" />
-                  <span className="font-bold text-white text-sm">{branch.name}</span>
-                  <span className="text-white/50 text-xs">{branch.code}</span>
-                </div>
-
-                <Badge variant="outline" className="border-white/30 text-white/80 text-[10px] py-0 shrink-0">
-                  {total} students · {branch.sections.length} section{branch.sections.length !== 1 ? "s" : ""}
-                </Badge>
-
-                <div className="flex items-center gap-4 ml-auto flex-wrap">
-                  {[
-                    { icon: Users, color: "text-orange-300", label: "Operator", person: branch.operator },
-                    { icon: ShieldCheck, color: "text-blue-300", label: "Principal", person: branch.principal },
-                    { icon: GraduationCap, color: "text-green-300", label: "Dean", person: branch.dean },
-                  ].map(({ icon: Icon, color, label, person }) => (
-                    <div key={label} className="flex items-center gap-1 text-[11px]">
-                      <Icon className={cn("h-3 w-3 shrink-0", color)} />
-                      <span className={cn("font-semibold", color)}>{label}:</span>
-                      <span className="text-white/70 truncate max-w-[120px]">
-                        {person ? person.full_name : <span className="italic text-white/30">—</span>}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <CardContent className="pt-4 pb-4">
-                <BranchPanel
-                  branch={branch}
-                  examDetail={examDetail}
-                  uploadedPapers={uploadedPapers}
-                  onUpload={paper => setOmrTarget(makeVirtualExam(paper))}
-                  onClear={handleClear}
-                  onShowStudents={section => setStudentsPopup({ section, branchName: branch.name })}
-                />
-              </CardContent>
-            </Card>
-          );
-        })}
+          <div className={cn("font-mono text-xl font-bold mt-0.5",
+            examDetail.exam_type === "Mains" ? "text-blue-800" : "text-violet-800")}>
+            {examDetail.exam_code}
+          </div>
+        </div>
+        <div>
+          <div className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1">
+            <CalendarDays className="h-3 w-3" /> Date
+          </div>
+          <div className="text-sm font-semibold mt-0.5">{fmt(examDetail.exam_date)}</div>
+        </div>
+        <div>
+          <div className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1">
+            <BookOpen className="h-3 w-3" /> Program
+          </div>
+          <div className="text-sm font-semibold mt-0.5">{examDetail.program_name}</div>
+        </div>
+        <div>
+          <div className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Class</div>
+          <div className="text-sm font-semibold mt-0.5">{examDetail.class_name}</div>
+        </div>
+        <div className="ml-auto flex items-center gap-6">
+          <div>
+            <div className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1">
+              <Building2 className="h-3 w-3" /> Branches
+            </div>
+            <div className="text-sm font-semibold mt-0.5">{configuredBranches.length}</div>
+          </div>
+          <div>
+            <div className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1">
+              <Users className="h-3 w-3" /> Students
+            </div>
+            <div className="text-sm font-semibold mt-0.5">{totalStudents}</div>
+          </div>
+          <Badge
+            variant="outline"
+            className={cn("text-sm px-3 py-1 h-fit",
+              examDetail.exam_type === "Mains"
+                ? "bg-blue-100 text-blue-800 border-blue-300"
+                : "bg-violet-100 text-violet-800 border-violet-300"
+            )}
+          >
+            {examDetail.exam_type} · {examDetail.exam_type === "Advanced" ? "P1 + P2" : "P1"}
+          </Badge>
+        </div>
       </div>
+
+      {/* Per-paper, per-branch cards */}
+      {configuredBranches.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-16 text-center text-muted-foreground">
+          <XCircle className="h-8 w-8 text-muted-foreground/20 mb-3" />
+          <p className="font-medium">No branches configured</p>
+          <p className="text-sm text-muted-foreground/60 mt-1">No sections have been set up for this program and class.</p>
+        </div>
+      ) : (
+        <div className="space-y-6">
+          {examPapers.map(paper => (
+            <div key={paper.id}>
+              {examPapers.length > 1 && (
+                <div className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-2 flex items-center gap-2">
+                  <span className={cn("px-2 py-0.5 rounded text-white text-[10px]",
+                    paper.paper === "P1" ? "bg-emerald-600" : "bg-amber-500"
+                  )}>
+                    {paper.paper}
+                  </span>
+                  Paper {paper.paper === "P1" ? "1" : "2"}
+                </div>
+              )}
+              <div className="space-y-3">
+                {configuredBranches.map(branch => {
+                  const log = uploadLogMap[paper.paper]?.[branch.id];
+                  return (
+                    <BranchUploadPanel
+                      key={branch.id}
+                      paper={paper}
+                      branch={branch}
+                      log={log}
+                      onUpload={() => setOmrTarget({ exam: paper, branchId: branch.id, branchName: branch.name })}
+                      onClear={() => clearBranchMut.mutate({ paperId: paper.id, branchId: branch.id })}
+                      onShowStudents={section => setStudentsPopup({ section, branchName: branch.name })}
+                    />
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* OMR Upload Dialog */}
       {omrTarget && (
         <OMRUploadDialog
-          exam={omrTarget}
+          exam={omrTarget.exam}
+          branchId={omrTarget.branchId}
+          branchName={omrTarget.branchName}
           open={!!omrTarget}
           onOpenChange={open => { if (!open) setOmrTarget(null); }}
         />

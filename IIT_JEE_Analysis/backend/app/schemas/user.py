@@ -3,7 +3,7 @@ import json
 from datetime import datetime
 from typing import Any, Optional
 
-from pydantic import BaseModel, EmailStr, field_validator, model_validator
+from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
 
 from app.models.user import RoleName
 
@@ -21,7 +21,7 @@ class RoleOut(BaseModel):
 # ----------- User -----------
 
 class UserBase(BaseModel):
-    username: str
+    username: str = Field(min_length=2)
     email: Optional[EmailStr] = None
     full_name: str
     phone: Optional[str] = None

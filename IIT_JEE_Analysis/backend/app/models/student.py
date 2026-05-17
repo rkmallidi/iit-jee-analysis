@@ -29,7 +29,7 @@ class Student(Base):
     admission_no: Mapped[str] = mapped_column(String(50), unique=True, nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     phone: Mapped[str | None] = mapped_column(String(30), nullable=True)
-    rank_category: Mapped[str | None] = mapped_column(
+    target_rank: Mapped[str | None] = mapped_column(
         Enum(RankCategory, name="rankcategory_enum", values_callable=lambda x: [e.value for e in x]),
         nullable=True,
     )

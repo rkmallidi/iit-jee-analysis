@@ -5,7 +5,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Eye, EyeOff, GraduationCap, Loader2 } from "lucide-react";
 
-import { login, me } from "@/lib/api";
+import { login, me, meContext } from "@/lib/api";
 import { useAuthStore } from "@/store/auth";
 import { useThemeStore } from "@/store/theme";
 import { Button } from "@/components/ui/button";
@@ -22,7 +22,7 @@ type FormData = z.infer<typeof schema>;
 
 export default function LoginPage() {
   const navigate = useNavigate();
-  const { setTokens, setUser } = useAuthStore();
+  const { setTokens, setUser, setContext } = useAuthStore();
   const { applyTheme } = useThemeStore();
   const [showPwd, setShowPwd] = useState(false);
 
@@ -34,8 +34,9 @@ export default function LoginPage() {
     try {
       const { data: tokens } = await login(data.username, data.password);
       setTokens(tokens.access_token, tokens.refresh_token);
-      const { data: user } = await me();
+      const [{ data: user }, { data: ctx }] = await Promise.all([me(), meContext()]);
       setUser(user);
+      setContext(ctx.branch_ids);
       // Apply saved theme
       if (user.theme_prefs) {
         const { setMode, setPrimaryColor, setRadius } = useThemeStore.getState();
@@ -44,7 +45,10 @@ export default function LoginPage() {
         if (user.theme_prefs.radius) setRadius(user.theme_prefs.radius as string);
       }
       applyTheme();
-      navigate("/");
+      // Operators land directly on the OMR upload page
+      const isOperator = user.roles.some(r => r.name === "Operator") &&
+        !user.roles.some(r => ["Admin", "Dean", "Principal", "Vice-Principal"].includes(r.name));
+      navigate(isOperator ? "/results" : "/");
     } catch {
       toast({ title: "Login failed", description: "Invalid username or password.", variant: "destructive" });
     }

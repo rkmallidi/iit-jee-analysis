@@ -149,7 +149,7 @@ export interface Student {
   admission_no: string;
   name: string;
   phone?: string;
-  rank_category?: RankCategory | null;
+  target_rank?: RankCategory | null;
   is_active: boolean;
   created_at: string;
   section_mapping?: StudentSection;
@@ -162,8 +162,20 @@ export interface UploadResult {
   errors: string[];
 }
 
-export type ExamType  = "Mains" | "Advanced";
-export type PaperType = "P1" | "P2";
+export type ExamType   = "Mains" | "Advanced";
+export type PaperType  = "P1" | "P2";
+export type ExamStatus = "draft" | "published" | "completed";
+
+export interface UploadLog {
+  branch_id: number;
+  uploaded_at: string;
+  valid_count: number;
+  absent_count: number;
+  duplicate_count: number;
+  invalid_count: number;
+  absent_list: string[];
+  file_name: string;
+}
 
 export interface Exam {
   id: number;
@@ -174,9 +186,15 @@ export interface Exam {
   exam_type: ExamType;
   paper: PaperType;
   exam_date: string;
+  status: ExamStatus;
+  mas_mathematics?: number | null;
+  mas_physics?: number | null;
+  mas_chemistry?: number | null;
   created_at: string;
   updated_at: string;
   question_count: number;
+  result_count: number;
+  upload_logs: UploadLog[];
 }
 
 export interface ExamQuestion {
@@ -281,6 +299,275 @@ export interface Question {
   updated_at: string;
 }
 
+export interface QuestionResult {
+  qno: number;
+  subject: string;
+  question_type: string | null;
+  student_answer: number | string;
+  correct_answer: string | null;
+  is_correct: boolean | null;
+  marks_awarded: number;
+  is_bonus: boolean;
+  is_deleted: boolean;
+}
+
+export interface StudentResult {
+  student_id: number;
+  admission_no: string;
+  name: string;
+  target_rank: RankCategory | null;
+  branch_id: number | null;
+  branch_name: string | null;
+  total_score: number;
+  math_score: number;
+  physics_score: number;
+  chemistry_score: number;
+  attempted: number;
+  correct: number;
+  wrong: number;
+  unattempted: number;
+  responses: QuestionResult[];
+}
+
+export interface ExamResultsDetail {
+  exam_id: number;
+  questions: Array<{
+    qno: number;
+    subject: string;
+    question_type: string | null;
+    marks: number;
+    negative_marks: number;
+    bkc: string | null;
+    akc: string | null;
+    is_bonus: boolean;
+    is_deleted: boolean;
+  }>;
+  students: StudentResult[];
+}
+
+export interface EvaluationPaperSummary {
+  paper: string;
+  students: number;
+  mi_total: number | null;
+  mi_math: number | null;
+  mi_physics: number | null;
+  mi_chemistry: number | null;
+}
+
+export interface EvaluationSummary {
+  exam_code: string;
+  exam_type: string;
+  total_evaluated: number;
+  papers: EvaluationPaperSummary[];
+}
+
+export interface EvaluationStatus {
+  evaluated: boolean;
+  evaluated_count: number;
+  last_evaluated_at: string | null;
+  cumulative_count: number;
+}
+
+// ── Analytics Types ────────────────────────────────────────────────────────────
+
+export interface CommandCenterData {
+  pipeline: {
+    total_logical: number;
+    draft: number;
+    published: number;
+    completed: number;
+    evaluated: number;
+  };
+  totals: {
+    results_uploaded: number;
+    students_evaluated: number;
+  };
+  recent_exams: Array<{
+    id: number;
+    exam_code: string;
+    paper: string;
+    exam_type: string;
+    exam_date: string;
+    status: string;
+    result_count: number;
+    evaluated: boolean;
+  }>;
+  branch_uploads: Array<{
+    branch_id: number;
+    branch_name: string;
+    uploaded: boolean;
+  }>;
+}
+
+export interface EvaluatedExamItem {
+  exam_id: number;
+  exam_code: string;
+  exam_type: string;
+  paper: string;
+  exam_date: string;
+  academic_year_id: number;
+  student_count: number;
+}
+
+export interface BranchComparisonRow {
+  branch_id: number;
+  branch_name: string;
+  students: number;
+  avg_score: number;
+  top_score: number;
+  avg_math: number;
+  avg_physics: number;
+  avg_chemistry: number;
+  avg_percentile: number;
+  above_mi: number | null;
+}
+
+export interface Top10Row {
+  rank: number;
+  student_id: number;
+  name: string;
+  admission_no: string;
+  branch_name: string;
+  total_score: number;
+  math_score: number;
+  physics_score: number;
+  chemistry_score: number;
+  percentile: number;
+  percentile_band: string;
+  above_mi: boolean;
+}
+
+export interface FacultyPerfRow {
+  faculty_id: number;
+  faculty_name: string;
+  subject: string;
+  students: number;
+  avg_score: number;
+  top_score: number;
+}
+
+export interface PerformanceData {
+  exam_id: number;
+  students: number;
+  max_score: number;
+  summary: {
+    avg_score: number;
+    top_score: number;
+    avg_math: number;
+    avg_physics: number;
+    avg_chemistry: number;
+    avg_percentile: number;
+    mi_total: number | null;
+    mi_math: number | null;
+    mi_physics: number | null;
+    mi_chemistry: number | null;
+    above_mi_total: number | null;
+    above_mi_math: number | null;
+    above_mi_physics: number | null;
+    above_mi_chemistry: number | null;
+  };
+  score_distribution: Array<{ range: string; count: number }>;
+  percentile_bands: Record<string, number>;
+  branch_comparison: BranchComparisonRow[];
+  top10: Top10Row[];
+  faculty_performance: FacultyPerfRow[];
+}
+
+export interface StudentSearchResult {
+  id: number;
+  admission_no: string;
+  name: string;
+  target_rank: RankCategory | null;
+  branch_name: string | null;
+  section_name: string | null;
+}
+
+export interface StudentExamHistory {
+  exam_id: number;
+  exam_code: string;
+  exam_type: string;
+  paper: string;
+  exam_date: string;
+  total_score: number;
+  max_score: number;
+  math_score: number;
+  physics_score: number;
+  chemistry_score: number;
+  average_percentage: number;
+  math_percentage: number;
+  physics_percentage: number;
+  chemistry_percentage: number;
+  overall_rank: number;
+  branch_rank: number | null;
+  section_rank: number | null;
+  overall_percentile: number;
+  percentile_band: string;
+  rank_change_overall: number | null;
+  rank_change_branch: number | null;
+  score_change: number | null;
+  mi_total: number | null;
+  above_mi_total: boolean;
+  above_mi_math: boolean;
+  above_mi_physics: boolean;
+  above_mi_chemistry: boolean;
+  attempted: number;
+  correct: number;
+  wrong: number;
+  unattempted: number;
+  math_attempted: number;
+  math_correct: number;
+  math_wrong: number;
+  physics_attempted: number;
+  physics_correct: number;
+  physics_wrong: number;
+  chemistry_attempted: number;
+  chemistry_correct: number;
+  chemistry_wrong: number;
+  math_faculty_name: string | null;
+  physics_faculty_name: string | null;
+  chemistry_faculty_name: string | null;
+  branch_name: string | null;
+}
+
+export interface StudentReportData {
+  student: {
+    id: number;
+    admission_no: string;
+    name: string;
+    target_rank: RankCategory | null;
+    branch_name: string | null;
+  };
+  history: StudentExamHistory[];
+  cumulative_history: Array<{
+    exam_code: string;
+    exam_date: string;
+    p1_total: number;
+    p2_total: number;
+    cumulative_total: number;
+    max_score: number;
+    cumulative_math: number;
+    cumulative_physics: number;
+    cumulative_chemistry: number;
+    overall_rank: number;
+    branch_rank: number | null;
+    section_rank: number | null;
+    overall_percentile: number;
+    percentile_band: string;
+    rank_change_overall: number | null;
+    average_percentage: number;
+    above_mi_total: boolean;
+  }>;
+  subject_summary: {
+    math: { avg_score: number; avg_pct: number; avg_correct: number; avg_wrong: number };
+    physics: { avg_score: number; avg_pct: number; avg_correct: number; avg_wrong: number };
+    chemistry: { avg_score: number; avg_pct: number; avg_correct: number; avg_wrong: number };
+  };
+  best_subject: string | null;
+  worst_subject: string | null;
+  total_exams: number;
+  mi_cleared_count: number;
+}
+
 export interface TokenResponse {
   access_token: string;
   refresh_token: string;
@@ -292,3 +579,4 @@ export interface ThemeConfig {
   primaryColor?: string;
   radius?: string;
 }
+

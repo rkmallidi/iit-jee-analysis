@@ -3,7 +3,7 @@ import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { useAcademicYearStore } from "@/store/academicYear";
 import {
   Download, FileSpreadsheet, Loader2, AlertCircle, CheckCircle2,
-  ChevronRight, Search, X, Edit, Save, Plus,
+  ChevronRight, Search, X, Edit, Save, Plus, Star,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -18,7 +18,7 @@ import {
   getBranchSections, assignStudentSection, removeStudentSection,
   createStudent,
 } from "@/lib/api";
-import type { Branch, Student, UploadResult, RankCategory, BranchSection } from "@/types";
+import type { Branch, Student, UploadResult, BranchSection } from "@/types";
 
 // ── Helper to organize sections for cascading dropdowns ──────────────────────
 function getAvailableBranches(branchSections: BranchSection[]) {
@@ -59,7 +59,7 @@ function EditStudentModal({ student, onClose, onSave }: { student: Student; onCl
   const { selectedYear } = useAcademicYearStore();
   const [name, setName] = useState(student.name);
   const [phone, setPhone] = useState(student.phone ?? "");
-  const [rankCategory, setRankCategory] = useState<string>(student.rank_category || "none");
+  const [rankCategory, setRankCategory] = useState<string>(student.target_rank || "none");
   const [isActive, setIsActive] = useState(student.is_active);
   const [selectedBranchId, setSelectedBranchId] = useState<string>(
     student.section_mapping?.branch_section?.branch_id?.toString() || ""
@@ -96,6 +96,10 @@ function EditStudentModal({ student, onClose, onSave }: { student: Student; onCl
       toast({ title: "Name is required", variant: "destructive" });
       return;
     }
+    if (!selectedBranchId || !selectedProgramId || !selectedClassId || !selectedSectionId) {
+      toast({ title: "Section assignment is required", description: "Select Branch, Program, Class, and Section.", variant: "destructive" });
+      return;
+    }
     setSaving(true);
     try {
       const newBranchSectionId = selectedSectionId ? parseInt(selectedSectionId) : null;
@@ -104,7 +108,7 @@ function EditStudentModal({ student, onClose, onSave }: { student: Student; onCl
       await onSave({
         name: name.trim(),
         phone: phone.trim() || null,
-        rank_category: rankCategory === "none" ? null : rankCategory,
+        target_rank: rankCategory === "none" ? null : rankCategory,
         is_active: isActive,
         section_update: {
           old_section_id: oldBranchSectionId,
@@ -146,21 +150,36 @@ function EditStudentModal({ student, onClose, onSave }: { student: Student; onCl
               placeholder="+91 9876543210"
             />
           </div>
-          <div className="grid gap-2">
-            <label htmlFor="rank" className="text-sm font-medium">Rank Category</label>
-            <Select value={rankCategory} onValueChange={setRankCategory}>
-              <SelectTrigger id="rank">
-                <SelectValue placeholder="Select rank category" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">None</SelectItem>
-                <SelectItem value="Top 10">Top 10</SelectItem>
-                <SelectItem value="Top 100">Top 100</SelectItem>
-                <SelectItem value="Top 1000">Top 1000</SelectItem>
-                <SelectItem value="Top 10000">Top 10000</SelectItem>
-                <SelectItem value="Qualifier">Qualifier</SelectItem>
-              </SelectContent>
-            </Select>
+          <div className="grid gap-1.5">
+            <label className="text-sm font-medium">Target Rank</label>
+            {(() => {
+              const STAR_TIERS = ["Qualifier", "Top 10000", "Top 1000", "Top 100", "Top 10"];
+              const activeStars = rankCategory === "none" ? 0 : STAR_TIERS.indexOf(rankCategory) + 1;
+              return (
+                <div className="flex items-center gap-1">
+                  {STAR_TIERS.map((tier, i) => {
+                    const starIndex = i + 1;
+                    const filled = starIndex <= activeStars;
+                    return (
+                      <button
+                        key={tier}
+                        type="button"
+                        onClick={() => setRankCategory(activeStars === starIndex ? "none" : tier)}
+                        className="p-0.5 rounded transition-transform hover:scale-110 focus:outline-none"
+                        title={tier}
+                      >
+                        <Star
+                          className={`w-6 h-6 transition-colors ${filled ? "fill-amber-400 text-amber-400" : "text-muted-foreground/30 hover:text-amber-300"}`}
+                        />
+                      </button>
+                    );
+                  })}
+                  <span className="ml-2 text-xs text-muted-foreground">
+                    {rankCategory === "none" ? "None" : rankCategory}
+                  </span>
+                </div>
+              );
+            })()}
           </div>
           <div className="space-y-3">
             <p className="text-sm font-medium">Section Assignment</p>
@@ -172,12 +191,12 @@ function EditStudentModal({ student, onClose, onSave }: { student: Student; onCl
             <div className="grid grid-cols-2 gap-2">
               <div className="grid gap-1">
                 <label htmlFor="branch" className="text-xs font-medium text-muted-foreground">Branch</label>
-                <Select value={selectedBranchId} onValueChange={setSelectedBranchId}>
+                <Select value={selectedBranchId || "__none__"} onValueChange={v => { const val = v === "__none__" ? "" : v; setSelectedBranchId(val); setSelectedProgramId(""); setSelectedClassId(""); setSelectedSectionId(""); }}>
                   <SelectTrigger id="branch" className="h-8 text-xs">
                     <SelectValue placeholder="Select branch" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">Clear</SelectItem>
+                    <SelectItem value="__none__">Clear</SelectItem>
                     {branchIds.map(id => {
                       const branch = branchSections.find(bs => bs.branch_id === id)?.branch;
                       return branch ? (
@@ -189,12 +208,12 @@ function EditStudentModal({ student, onClose, onSave }: { student: Student; onCl
               </div>
               <div className="grid gap-1">
                 <label htmlFor="program" className="text-xs font-medium text-muted-foreground">Program</label>
-                <Select value={selectedProgramId} onValueChange={setSelectedProgramId} disabled={!selectedBranchId}>
+                <Select value={selectedProgramId || "__none__"} onValueChange={v => { const val = v === "__none__" ? "" : v; setSelectedProgramId(val); setSelectedClassId(""); setSelectedSectionId(""); }} disabled={!selectedBranchId}>
                   <SelectTrigger id="program" className="h-8 text-xs">
                     <SelectValue placeholder="Select program" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">Clear</SelectItem>
+                    <SelectItem value="__none__">Clear</SelectItem>
                     {programIds.map(id => {
                       const program = branchSections.find(bs => bs.program_id === id)?.program;
                       return program ? (
@@ -206,12 +225,12 @@ function EditStudentModal({ student, onClose, onSave }: { student: Student; onCl
               </div>
               <div className="grid gap-1">
                 <label htmlFor="class" className="text-xs font-medium text-muted-foreground">Class</label>
-                <Select value={selectedClassId} onValueChange={setSelectedClassId} disabled={!selectedProgramId}>
+                <Select value={selectedClassId || "__none__"} onValueChange={v => { const val = v === "__none__" ? "" : v; setSelectedClassId(val); setSelectedSectionId(""); }} disabled={!selectedProgramId}>
                   <SelectTrigger id="class" className="h-8 text-xs">
                     <SelectValue placeholder="Select class" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">Clear</SelectItem>
+                    <SelectItem value="__none__">Clear</SelectItem>
                     {classIds.map(id => {
                       const cls = branchSections.find(bs => bs.class_id === id)?.class_;
                       return cls ? (
@@ -223,12 +242,12 @@ function EditStudentModal({ student, onClose, onSave }: { student: Student; onCl
               </div>
               <div className="grid gap-1">
                 <label htmlFor="sec" className="text-xs font-medium text-muted-foreground">Section</label>
-                <Select value={selectedSectionId} onValueChange={setSelectedSectionId} disabled={!selectedClassId}>
+                <Select value={selectedSectionId || "__none__"} onValueChange={v => setSelectedSectionId(v === "__none__" ? "" : v)} disabled={!selectedClassId}>
                   <SelectTrigger id="sec" className="h-8 text-xs">
                     <SelectValue placeholder="Select section" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">Clear</SelectItem>
+                    <SelectItem value="__none__">Clear</SelectItem>
                     {sectionOptions.map(bs => (
                       <SelectItem key={bs.id} value={bs.id.toString()}>{bs.section?.name}</SelectItem>
                     ))}
@@ -291,6 +310,10 @@ function AddStudentModal({ onClose, onSave }: { onClose: () => void; onSave: (da
       toast({ title: "Admission No and Name are required", variant: "destructive" });
       return;
     }
+    if (!selectedBranchId || !selectedProgramId || !selectedClassId || !selectedSectionId) {
+      toast({ title: "Section assignment is required", description: "Select Branch, Program, Class, and Section.", variant: "destructive" });
+      return;
+    }
     setSaving(true);
     try {
       await onSave({
@@ -344,12 +367,12 @@ function AddStudentModal({ onClose, onSave }: { onClose: () => void; onSave: (da
             <div className="grid grid-cols-2 gap-2">
               <div className="grid gap-1">
                 <label htmlFor="ab" className="text-xs font-medium text-muted-foreground">Branch</label>
-                <Select value={selectedBranchId} onValueChange={setSelectedBranchId}>
+                <Select value={selectedBranchId || "__none__"} onValueChange={v => { const val = v === "__none__" ? "" : v; setSelectedBranchId(val); setSelectedProgramId(""); setSelectedClassId(""); setSelectedSectionId(""); }}>
                   <SelectTrigger id="ab" className="h-8 text-xs">
                     <SelectValue placeholder="Select branch" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">Clear</SelectItem>
+                    <SelectItem value="__none__">Clear</SelectItem>
                     {branchIds.map(id => {
                       const branch = branchSections.find(bs => bs.branch_id === id)?.branch;
                       return branch ? (
@@ -361,12 +384,12 @@ function AddStudentModal({ onClose, onSave }: { onClose: () => void; onSave: (da
               </div>
               <div className="grid gap-1">
                 <label htmlFor="ap" className="text-xs font-medium text-muted-foreground">Program</label>
-                <Select value={selectedProgramId} onValueChange={setSelectedProgramId} disabled={!selectedBranchId}>
+                <Select value={selectedProgramId || "__none__"} onValueChange={v => { const val = v === "__none__" ? "" : v; setSelectedProgramId(val); setSelectedClassId(""); setSelectedSectionId(""); }} disabled={!selectedBranchId}>
                   <SelectTrigger id="ap" className="h-8 text-xs">
                     <SelectValue placeholder="Select program" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">Clear</SelectItem>
+                    <SelectItem value="__none__">Clear</SelectItem>
                     {programIds.map(id => {
                       const program = branchSections.find(bs => bs.program_id === id)?.program;
                       return program ? (
@@ -378,12 +401,12 @@ function AddStudentModal({ onClose, onSave }: { onClose: () => void; onSave: (da
               </div>
               <div className="grid gap-1">
                 <label htmlFor="ac" className="text-xs font-medium text-muted-foreground">Class</label>
-                <Select value={selectedClassId} onValueChange={setSelectedClassId} disabled={!selectedProgramId}>
+                <Select value={selectedClassId || "__none__"} onValueChange={v => { const val = v === "__none__" ? "" : v; setSelectedClassId(val); setSelectedSectionId(""); }} disabled={!selectedProgramId}>
                   <SelectTrigger id="ac" className="h-8 text-xs">
                     <SelectValue placeholder="Select class" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">Clear</SelectItem>
+                    <SelectItem value="__none__">Clear</SelectItem>
                     {classIds.map(id => {
                       const cls = branchSections.find(bs => bs.class_id === id)?.class_;
                       return cls ? (
@@ -395,12 +418,12 @@ function AddStudentModal({ onClose, onSave }: { onClose: () => void; onSave: (da
               </div>
               <div className="grid gap-1">
                 <label htmlFor="as" className="text-xs font-medium text-muted-foreground">Section</label>
-                <Select value={selectedSectionId} onValueChange={setSelectedSectionId} disabled={!selectedClassId}>
+                <Select value={selectedSectionId || "__none__"} onValueChange={v => setSelectedSectionId(v === "__none__" ? "" : v)} disabled={!selectedClassId}>
                   <SelectTrigger id="as" className="h-8 text-xs">
                     <SelectValue placeholder="Select section" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">Clear</SelectItem>
+                    <SelectItem value="__none__">Clear</SelectItem>
                     {sectionOptions.map(bs => (
                       <SelectItem key={bs.id} value={bs.id.toString()}>{bs.section?.name}</SelectItem>
                     ))}
@@ -477,6 +500,8 @@ export default function StudentMappingPage() {
 
   const [search, setSearch] = useState("");
   const [filterBranchId, setFilterBranchId] = useState<string>("__all__");
+  const [filterProgramId, setFilterProgramId] = useState<string>("__all__");
+  const [filterClassId, setFilterClassId] = useState<string>("__all__");
   const [uploading, setUploading] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [uploadResult, setUploadResult] = useState<UploadResult | null>(null);
@@ -498,6 +523,12 @@ export default function StudentMappingPage() {
   const { data: branches = [] } = useQuery<Branch[]>({
     queryKey: ["branches"],
     queryFn: () => getBranches().then(r => r.data),
+  });
+
+  const { data: filterBranchSections = [] } = useQuery<BranchSection[]>({
+    queryKey: ["branch-sections", yearId],
+    queryFn: () => getBranchSections({ academic_year_id: yearId }).then(r => r.data),
+    enabled: !!yearId,
   });
 
   const { data: students = [], isLoading } = useQuery<Student[]>({
@@ -571,24 +602,43 @@ export default function StudentMappingPage() {
     },
   });
 
-  const getRankCategoryColor = (category: RankCategory | null | undefined) => {
-    if (!category) return null;
-    const colorMap: Record<RankCategory, string> = {
-      "Top 10": "bg-red-100 text-red-700 border-red-200",
-      "Top 100": "bg-orange-100 text-orange-700 border-orange-200",
-      "Top 1000": "bg-amber-100 text-amber-700 border-amber-200",
-      "Top 10000": "bg-yellow-100 text-yellow-700 border-yellow-200",
-      "Qualifier": "bg-emerald-100 text-emerald-700 border-emerald-200",
-    };
-    return colorMap[category];
-  };
-
-  // Only students that have a section assignment for this year
   const assigned = students.filter(s => s.section_mapping);
+  const unassigned = students.filter(s => !s.section_mapping);
 
-  const filtered = assigned.filter(s => {
+  // Derive filter options from branchSections (cascading)
+  const filterPrograms = filterBranchSections
+    .filter(bs => filterBranchId === "__all__" || String(bs.branch_id) === filterBranchId)
+    .reduce<{ id: number; name: string }[]>((acc, bs) => {
+      if (bs.program_id && bs.program && !acc.find(p => p.id === bs.program_id))
+        acc.push({ id: bs.program_id, name: bs.program.name });
+      return acc;
+    }, []);
+
+  const filterClasses = filterBranchSections
+    .filter(bs =>
+      (filterBranchId === "__all__" || String(bs.branch_id) === filterBranchId) &&
+      (filterProgramId === "__all__" || String(bs.program_id) === filterProgramId)
+    )
+    .reduce<{ id: number; name: string }[]>((acc, bs) => {
+      if (bs.class_id && bs.class_ && !acc.find(c => c.id === bs.class_id))
+        acc.push({ id: bs.class_id, name: bs.class_.name });
+      return acc;
+    }, []);
+
+  const filtered = students.filter(s => {
     const bs = s.section_mapping?.branch_section;
-    if (filterBranchId !== "__all__" && bs?.branch_id !== +filterBranchId) return false;
+    if (filterBranchId !== "__all__") {
+      if (!bs) return false;
+      if (bs.branch_id !== +filterBranchId) return false;
+    }
+    if (filterProgramId !== "__all__") {
+      if (!bs) return false;
+      if (bs.program_id !== +filterProgramId) return false;
+    }
+    if (filterClassId !== "__all__") {
+      if (!bs) return false;
+      if (bs.class_id !== +filterClassId) return false;
+    }
     if (search) {
       const q = search.toLowerCase();
       return (
@@ -695,14 +745,40 @@ export default function StudentMappingPage() {
 
         <div className="ml-auto flex items-center gap-2">
           {/* Branch filter */}
-          <Select value={filterBranchId} onValueChange={setFilterBranchId}>
-            <SelectTrigger className="w-44 h-9">
+          <Select value={filterBranchId} onValueChange={v => { setFilterBranchId(v); setFilterProgramId("__all__"); setFilterClassId("__all__"); }}>
+            <SelectTrigger className="w-36 h-9">
               <SelectValue placeholder="All branches" />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="__all__">All branches</SelectItem>
               {branches.map(b => (
                 <SelectItem key={b.id} value={String(b.id)}>{b.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          {/* Program filter */}
+          <Select value={filterProgramId} onValueChange={v => { setFilterProgramId(v); setFilterClassId("__all__"); }} disabled={filterPrograms.length === 0}>
+            <SelectTrigger className="w-36 h-9">
+              <SelectValue placeholder="All programs" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__all__">All programs</SelectItem>
+              {filterPrograms.map(p => (
+                <SelectItem key={p.id} value={String(p.id)}>{p.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          {/* Class filter */}
+          <Select value={filterClassId} onValueChange={setFilterClassId} disabled={filterClasses.length === 0}>
+            <SelectTrigger className="w-32 h-9">
+              <SelectValue placeholder="All classes" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__all__">All classes</SelectItem>
+              {filterClasses.map(c => (
+                <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
               ))}
             </SelectContent>
           </Select>
@@ -728,8 +804,8 @@ export default function StudentMappingPage() {
       {/* Summary */}
       {yearId && !isLoading && (
         <p className="text-sm text-muted-foreground">
-          {assigned.length} student{assigned.length !== 1 ? "s" : ""} assigned
-          {filterBranchId !== "__all__" || search ? ` · ${filtered.length} shown` : ""}
+          {assigned.length} assigned · <span className="text-amber-600 font-medium">{unassigned.length} unassigned</span>
+          {(filterBranchId !== "__all__" || filterProgramId !== "__all__" || filterClassId !== "__all__" || search) ? ` · ${filtered.length} shown` : ""}
           {selectedYear && <span className="ml-2 text-muted-foreground/60">— {selectedYear.name}</span>}
         </p>
       )}
@@ -754,10 +830,8 @@ export default function StudentMappingPage() {
             ) : filtered.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-20 text-center">
                 <FileSpreadsheet className="h-10 w-10 text-muted-foreground/30 mb-3" />
-                <p className="font-medium text-muted-foreground">No assignments found</p>
-                <p className="text-sm text-muted-foreground/60 mt-1">
-                  Upload an Excel file to assign students to sections.
-                </p>
+                <p className="font-medium text-muted-foreground">No students found</p>
+                <p className="text-sm text-muted-foreground/60 mt-1">Upload an Excel file or add students manually.</p>
               </div>
             ) : (
               <div className="overflow-x-auto">
@@ -767,7 +841,7 @@ export default function StudentMappingPage() {
                       <th className="text-left px-5 py-3 font-semibold text-muted-foreground whitespace-nowrap">Adm. No</th>
                       <th className="text-left px-4 py-3 font-semibold text-muted-foreground">Name</th>
                       <th className="text-left px-4 py-3 font-semibold text-muted-foreground">Phone</th>
-                      <th className="text-left px-4 py-3 font-semibold text-muted-foreground">Rank</th>
+                      <th className="text-left px-4 py-3 font-semibold text-muted-foreground">Target Rank</th>
                       <th className="text-left px-4 py-3 font-semibold text-muted-foreground">Section Assignment</th>
                       <th className="text-left px-4 py-3 font-semibold text-muted-foreground">Status</th>
                       <th className="text-center px-4 py-3 font-semibold text-muted-foreground whitespace-nowrap">Action</th>
@@ -776,26 +850,23 @@ export default function StudentMappingPage() {
                   <tbody className="divide-y">
                     {filtered.map(s => {
                       const bs = s.section_mapping?.branch_section;
-                      const rankColor = getRankCategoryColor(s.rank_category);
+                      const STAR_TIERS = ["Qualifier", "Top 10000", "Top 1000", "Top 100", "Top 10"];
+                      const stars = s.target_rank ? STAR_TIERS.indexOf(s.target_rank) + 1 : 0;
                       return (
                         <tr key={s.id} className="hover:bg-muted/20 transition-colors">
                           <td className="px-5 py-3">
-                            <code className="text-xs font-mono font-semibold bg-muted px-2 py-0.5 rounded">
-                              {s.admission_no}
-                            </code>
+                            <code className="text-xs font-mono font-semibold bg-muted px-2 py-0.5 rounded">{s.admission_no}</code>
                           </td>
                           <td className="px-4 py-3 font-medium">{s.name}</td>
                           <td className="px-4 py-3 text-muted-foreground text-xs">
                             {s.phone ?? <span className="italic text-muted-foreground/50">—</span>}
                           </td>
                           <td className="px-4 py-3">
-                            {s.rank_category ? (
-                              <Badge className={`text-[11px] font-semibold border ${rankColor}`}>
-                                {s.rank_category}
-                              </Badge>
-                            ) : (
-                              <span className="text-xs text-muted-foreground/50 italic">—</span>
-                            )}
+                            <div className="flex items-center gap-0.5" title={s.target_rank ?? "No target rank"}>
+                              {STAR_TIERS.map((_, i) => (
+                                <Star key={i} className={`w-3.5 h-3.5 ${i < stars ? "fill-amber-400 text-amber-400" : "text-muted-foreground/20"}`} />
+                              ))}
+                            </div>
                           </td>
                           <td className="px-4 py-3">
                             {bs ? (
@@ -808,7 +879,7 @@ export default function StudentMappingPage() {
                                 <Badge variant="secondary" className="font-mono text-[11px]">{bs.section?.name}</Badge>
                               </div>
                             ) : (
-                              <span className="text-xs text-muted-foreground/50 italic">—</span>
+                              <Badge className="text-[11px] font-semibold border bg-amber-50 text-amber-700 border-amber-200">Unassigned</Badge>
                             )}
                           </td>
                           <td className="px-4 py-3">
@@ -817,13 +888,7 @@ export default function StudentMappingPage() {
                             </span>
                           </td>
                           <td className="px-4 py-3 text-center">
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => setEditingStudent(s)}
-                              className="h-7 w-7 p-0"
-                              title="Edit student"
-                            >
+                            <Button size="sm" variant="ghost" onClick={() => setEditingStudent(s)} className="h-7 w-7 p-0" title="Edit student">
                               <Edit className="h-3.5 w-3.5" />
                             </Button>
                           </td>

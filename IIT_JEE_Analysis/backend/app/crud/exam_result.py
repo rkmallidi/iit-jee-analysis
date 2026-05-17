@@ -58,16 +58,19 @@ def delete_exam_results(db: Session, exam_id: int) -> int:
 def get_enrolled_students_for_exam(
     db: Session,
     exam_id: int,
+    branch_id: Optional[int] = None,
 ) -> Sequence[Student]:
-    """Get all students enrolled in the program/class/year of the exam for validation."""
+    """Get students enrolled in the program/class/year of the exam.
+
+    If branch_id is given, restrict to that branch only.
+    """
     from app.models.mapping import BranchSection
 
     exam = db.get(Exam, exam_id)
     if not exam:
         return []
 
-    # Find all students in the same program/class for the exam's academic year
-    return db.scalars(
+    stmt = (
         select(Student).join(
             StudentSection,
             Student.id == StudentSection.student_id,
@@ -79,4 +82,8 @@ def get_enrolled_students_for_exam(
             BranchSection.program_id == exam.program_id,
             BranchSection.class_id == exam.class_id,
         )
-    ).all()
+    )
+    if branch_id is not None:
+        stmt = stmt.where(BranchSection.branch_id == branch_id)
+
+    return db.scalars(stmt).all()

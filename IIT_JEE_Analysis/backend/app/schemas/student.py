@@ -19,7 +19,7 @@ class StudentBase(BaseModel):
     admission_no: str
     name: str
     phone: Optional[str] = None
-    rank_category: Optional[str] = None
+    target_rank: Optional[str] = None
     is_active: bool = True
 
 
@@ -30,7 +30,7 @@ class StudentCreate(StudentBase):
 class StudentUpdate(BaseModel):
     name: Optional[str] = None
     phone: Optional[str] = None
-    rank_category: Optional[str] = None
+    target_rank: Optional[str] = None
     is_active: Optional[bool] = None
 
 

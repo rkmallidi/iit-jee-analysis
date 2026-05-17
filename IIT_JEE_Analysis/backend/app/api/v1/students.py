@@ -14,6 +14,8 @@ from app.crud.student import (
     get_student,
     get_student_by_admission_no,
     get_students,
+    has_history,
+    reactivate_student,
     remove_section,
     update_student,
 )
@@ -49,6 +51,9 @@ _COL_ALIASES: dict[str, str] = {
     "status": "is_active",
     "is_active": "is_active",
     "active": "is_active",
+    "target_rank": "target_rank",
+    "target_rank": "target_rank",
+    "rank": "target_rank",
     "branch_name": "branch_name",
     "branch": "branch_name",
     "program_name": "program_name",
@@ -76,7 +81,7 @@ def download_template(_: CurrentUser):
     ws = wb.active
     ws.title = "Students"
 
-    headers = ["admission_no", "name", "phone", "status"]
+    headers = ["admission_no", "name", "phone", "status", "target_rank"]
     required = {"admission_no", "name"}
 
     header_fill = PatternFill("solid", fgColor="1E3A5F")
@@ -89,23 +94,24 @@ def download_template(_: CurrentUser):
         cell.alignment = Alignment(horizontal="center")
 
     # Sample row
-    ws.append(["7050729", "CS Koushik", "+91 9876543210", "Active"])
+    ws.append(["7050729", "CS Koushik", "+91 9876543210", "Active", "Top 100"])
 
     # Column widths
-    widths = [18, 28, 20, 12]
+    widths = [18, 28, 20, 12, 16]
     for col_idx, width in enumerate(widths, start=1):
         ws.column_dimensions[ws.cell(row=1, column=col_idx).column_letter].width = width
 
     # Instructions sheet
     ws2 = wb.create_sheet("Instructions")
     ws2.append(["Column", "Required?", "Notes"])
-    ws2.append(["admission_no", "YES", "Unique student ID — existing records are updated on match"])
-    ws2.append(["name",         "YES", "Full student name"])
-    ws2.append(["phone",        "no",  "Mobile number (optional)"])
-    ws2.append(["status",       "no",  "Active or Inactive (default: Active)"])
+    ws2.append(["admission_no",  "YES", "Unique student ID — existing records are updated on match"])
+    ws2.append(["name",          "YES", "Full student name"])
+    ws2.append(["phone",         "no",  "Mobile number (optional)"])
+    ws2.append(["status",        "no",  "Active or Inactive (default: Active)"])
+    ws2.append(["target_rank", "no",  "Target Rank — one of: Top 10, Top 100, Top 1000, Top 10000, Qualifier (leave blank for none)"])
     ws2.column_dimensions["A"].width = 18
     ws2.column_dimensions["B"].width = 12
-    ws2.column_dimensions["C"].width = 50
+    ws2.column_dimensions["C"].width = 65
 
     buf = io.BytesIO()
     wb.save(buf)
@@ -182,15 +188,27 @@ def upload_students_excel(
                 raw = cell("is_active").lower()
                 is_active = raw not in ("inactive", "false", "0", "no")
 
+            _VALID_RANKS = {"Top 10", "Top 100", "Top 1000", "Top 10000", "Qualifier"}
+            target_rank: str | None = None
+            if "target_rank" in col_map:
+                raw_rank = cell("target_rank").strip()
+                if raw_rank and raw_rank in _VALID_RANKS:
+                    target_rank = raw_rank
+                elif raw_rank:
+                    errors.append(f"Row {row_num} ({admission_no}): invalid target_rank '{raw_rank}' — must be one of {', '.join(_VALID_RANKS)}")
+                    continue
+
             existing = db.scalar(select(Student).where(Student.admission_no == admission_no))
             if existing:
                 existing.name = name
                 if phone is not None:
                     existing.phone = phone
                 existing.is_active = is_active
+                if "target_rank" in col_map:
+                    existing.target_rank = target_rank
                 updated += 1
             else:
-                db.add(Student(admission_no=admission_no, name=name, phone=phone, is_active=is_active))
+                db.add(Student(admission_no=admission_no, name=name, phone=phone, is_active=is_active, target_rank=target_rank))
                 created += 1
 
         except Exception as exc:
@@ -215,7 +233,7 @@ def download_section_template(_: CurrentUser):
     ws = wb.active
     ws.title = "Students"
 
-    headers = ["admission_no", "name", "phone", "status", "branch_name", "program_name", "class_name", "section"]
+    headers = ["admission_no", "name", "phone", "status", "target_rank", "branch_name", "program_name", "class_name", "section"]
     required = {"admission_no", "branch_name", "program_name", "class_name", "section"}
 
     req_fill = PatternFill("solid", fgColor="1E3A5F")
@@ -227,9 +245,9 @@ def download_section_template(_: CurrentUser):
         cell.fill = req_fill if header in required else opt_fill
         cell.alignment = Alignment(horizontal="center")
 
-    ws.append(["7050729", "CS Koushik", "+91 9876543210", "Active", "Hyderabad", "IIT-JEE", "Class 11", "A"])
+    ws.append(["7050729", "CS Koushik", "+91 9876543210", "Active", "Top 100", "Hyderabad", "IIT-JEE", "Class 11", "A"])
 
-    widths = [18, 28, 20, 12, 20, 18, 14, 10]
+    widths = [18, 28, 20, 12, 16, 20, 18, 14, 10]
     for col_idx, width in enumerate(widths, start=1):
         ws.column_dimensions[ws.cell(row=1, column=col_idx).column_letter].width = width
 
@@ -239,6 +257,7 @@ def download_section_template(_: CurrentUser):
     ws2.append(["name",          "no",  "Required only when creating a new student"])
     ws2.append(["phone",         "no",  "Mobile number (optional)"])
     ws2.append(["status",        "no",  "Active or Inactive (default: Active)"])
+    ws2.append(["target_rank", "no",  "Target Rank — one of: Top 10, Top 100, Top 1000, Top 10000, Qualifier (leave blank for none)"])
     ws2.append(["branch_name",   "YES", "Must exactly match a Branch name in the system"])
     ws2.append(["program_name",  "YES", "Must exactly match a Program name in the system"])
     ws2.append(["class_name",    "YES", "Must exactly match a Class name in the system"])
@@ -367,11 +386,23 @@ def upload_section_excel(
                 raw_status = cell("is_active").lower()
                 is_active = raw_status not in ("inactive", "false", "0", "no")
 
+            _VALID_RANKS = {"Top 10", "Top 100", "Top 1000", "Top 10000", "Qualifier"}
+            target_rank: str | None = None
+            if "target_rank" in col_map:
+                raw_rank = cell("target_rank").strip()
+                if raw_rank and raw_rank in _VALID_RANKS:
+                    target_rank = raw_rank
+                elif raw_rank:
+                    errors.append(f"Row {row_num} ({admission_no}): invalid target_rank '{raw_rank}' — must be one of {', '.join(sorted(_VALID_RANKS))}")
+                    continue
+
             existing = db.scalar(select(Student).where(Student.admission_no == admission_no))
             if existing:
                 if phone is not None:
                     existing.phone = phone
                 existing.is_active = is_active
+                if "target_rank" in col_map:
+                    existing.target_rank = target_rank
                 student_id = existing.id
                 updated += 1
             else:
@@ -379,7 +410,7 @@ def upload_section_excel(
                 if not name:
                     errors.append(f"Row {row_num} ({admission_no}): student not found and 'name' column is empty — cannot create")
                     continue
-                s = Student(admission_no=admission_no, name=name, phone=phone, is_active=is_active)
+                s = Student(admission_no=admission_no, name=name, phone=phone, is_active=is_active, target_rank=target_rank)
                 db.add(s)
                 db.flush()
                 student_id = s.id
@@ -446,12 +477,30 @@ def update_student_ep(student_id: int, data: StudentUpdate, db: DbSession):
     return update_student(db, obj, data)
 
 
-@router.delete("/{student_id}", status_code=204, dependencies=[admin_only])
+@router.get("/{student_id}/has-history", dependencies=[admin_only])
+def student_has_history(student_id: int, db: DbSession):
+    obj = get_student(db, student_id)
+    if not obj:
+        raise HTTPException(404, "Not found")
+    return {"has_history": has_history(db, obj)}
+
+
+@router.post("/{student_id}/reactivate", response_model=StudentOut, dependencies=[admin_only])
+def reactivate_student_ep(student_id: int, db: DbSession):
+    obj = get_student(db, student_id)
+    if not obj:
+        raise HTTPException(404, "Not found")
+    if obj.is_active:
+        raise HTTPException(400, "Student is already active")
+    return reactivate_student(db, obj)
+
+
+@router.delete("/{student_id}", dependencies=[admin_only])
 def delete_student_ep(student_id: int, db: DbSession):
     obj = get_student(db, student_id)
     if not obj:
         raise HTTPException(404, "Not found")
-    delete_student(db, obj)
+    return delete_student(db, obj)
 
 
 # ── Section assignment ────────────────────────────────────────────────────────

@@ -41,7 +41,7 @@ class ExamResult(Base):
         nullable=False,
     )
 
-    exam: Mapped["Exam"] = relationship("Exam", backref="results")
+    exam: Mapped["Exam"] = relationship("Exam", backref="results", passive_deletes=True)
     student: Mapped["Student"] = relationship("Student", backref="exam_results")
 
     def __repr__(self) -> str:

@@ -6,12 +6,15 @@ import { z } from "zod";
 import {
   Plus, Search, Pencil, Trash2, Loader2,
   FileSpreadsheet, Download, X, CheckCircle2, AlertCircle,
+  ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight,
+  ArrowUpDown, ArrowUp, ArrowDown, RotateCcw,
 } from "lucide-react";
 
 import {
   getStudents, createStudent, updateStudent, deleteStudent,
-  uploadStudentsExcel, downloadStudentsTemplate,
+  studentHasHistory, reactivateStudent, uploadStudentsExcel, downloadStudentsTemplate,
 } from "@/lib/api";
+import { useAuthStore } from "@/store/auth";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -144,32 +147,124 @@ function UploadResultDialog({ result, onClose }: { result: UploadResult; onClose
   );
 }
 
+// ── Types ──────────────────────────────────────────────────────────────────────
+type SortField = "name" | "admission_no" | "is_active";
+type SortDir   = "asc" | "desc";
+
+const PAGE_SIZE_OPTIONS = [10, 25, 50, 100];
+
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function StudentsPage() {
   const qc = useQueryClient();
   const fileRef = useRef<HTMLInputElement>(null);
+  const { isAdmin, branchIds } = useAuthStore();
 
-  const [search, setSearch] = useState("");
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const [editItem, setEditItem] = useState<Student | null>(null);
-  const [deleteTarget, setDeleteTarget] = useState<Student | null>(null);
+  const [search, setSearch]           = useState("");
+  const [sortField, setSortField]     = useState<SortField>("name");
+  const [sortDir, setSortDir]         = useState<SortDir>("asc");
+  const [page, setPage]               = useState(1);
+  const [pageSize, setPageSize]       = useState(25);
+
+  const [dialogOpen, setDialogOpen]     = useState(false);
+  const [editItem, setEditItem]         = useState<Student | null>(null);
+  const [deleteTarget, setDeleteTarget]   = useState<Student | null>(null);
+  const [deleteHasHistory, setDeleteHasHistory] = useState<boolean | null>(null);
+  const [checkingHistory, setCheckingHistory]   = useState(false);
   const [uploadResult, setUploadResult] = useState<UploadResult | null>(null);
-  const [uploading, setUploading] = useState(false);
-  const [downloading, setDownloading] = useState(false);
+  const [uploading, setUploading]       = useState(false);
+  const [downloading, setDownloading]   = useState(false);
 
-  const { data: students = [], isLoading } = useQuery({
+  const { data: allStudents = [], isLoading } = useQuery({
     queryKey: ["students"],
     queryFn: () => getStudents().then(r => r.data),
   });
 
+  // Branch filter for non-admins
+  const students = isAdmin()
+    ? allStudents
+    : allStudents.filter(s =>
+        s.section_mapping?.branch_section?.branch_id != null &&
+        branchIds.includes(s.section_mapping.branch_section.branch_id)
+      );
+
+  // Search → sort → paginate (inactive students are shown, dimmed)
+  const filtered = students.filter(s => {
+    if (!search) return true;
+    const q = search.toLowerCase();
+    return s.admission_no.toLowerCase().includes(q) || s.name.toLowerCase().includes(q) || (s.phone ?? "").includes(q);
+  });
+
+  const sorted = [...filtered].sort((a, b) => {
+    if (sortField === "is_active") {
+      // Active (true=1) before Inactive (false=0) when asc
+      const diff = (b.is_active ? 1 : 0) - (a.is_active ? 1 : 0);
+      return sortDir === "asc" ? diff : -diff;
+    }
+    const valA = a[sortField].toLowerCase();
+    const valB = b[sortField].toLowerCase();
+    return sortDir === "asc" ? valA.localeCompare(valB) : valB.localeCompare(valA);
+  });
+
+  const totalPages = Math.max(1, Math.ceil(sorted.length / pageSize));
+  const safePage   = Math.min(page, totalPages);
+  const paginated  = sorted.slice((safePage - 1) * pageSize, safePage * pageSize);
+
+  // Reset to page 1 when search or sort changes
+  useEffect(() => { setPage(1); }, [search, sortField, sortDir, pageSize]);
+
+  const toggleSort = (field: SortField) => {
+    if (sortField === field) {
+      setSortDir(d => d === "asc" ? "desc" : "asc");
+    } else {
+      setSortField(field);
+      setSortDir("asc");
+    }
+  };
+
+  const SortIcon = ({ field }: { field: SortField }) => {
+    if (sortField !== field) return <ArrowUpDown className="h-3.5 w-3.5 ml-1 text-muted-foreground/50" />;
+    return sortDir === "asc"
+      ? <ArrowUp className="h-3.5 w-3.5 ml-1 text-primary" />
+      : <ArrowDown className="h-3.5 w-3.5 ml-1 text-primary" />;
+  };
+
   const deleteMutation = useMutation({
     mutationFn: (id: number) => deleteStudent(id),
-    onSuccess: () => {
+    onSuccess: (res) => {
       qc.invalidateQueries({ queryKey: ["students"] });
-      toast({ title: "Student deleted" });
+      const action = res.data.action;
+      toast({
+        title: action === "deactivated" ? "Student deactivated" : "Student removed",
+        description: action === "deactivated"
+          ? "Student has exam history — marked inactive."
+          : "Student permanently removed from the system.",
+      });
       setDeleteTarget(null);
+      setDeleteHasHistory(null);
     },
   });
+
+  const reactivateMutation = useMutation({
+    mutationFn: (id: number) => reactivateStudent(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["students"] });
+      toast({ title: "Student reactivated", description: "Student is now active." });
+    },
+    onError: () => toast({ title: "Error", description: "Could not reactivate student.", variant: "destructive" }),
+  });
+
+  const handleDeleteClick = async (s: Student) => {
+    setDeleteTarget(s);
+    setCheckingHistory(true);
+    try {
+      const res = await studentHasHistory(s.id);
+      setDeleteHasHistory(res.data.has_history);
+    } catch {
+      setDeleteHasHistory(false);
+    } finally {
+      setCheckingHistory(false);
+    }
+  };
 
   const handleDownloadTemplate = async () => {
     setDownloading(true);
@@ -177,15 +272,11 @@ export default function StudentsPage() {
       const res = await downloadStudentsTemplate();
       const url = URL.createObjectURL(new Blob([res.data]));
       const a = document.createElement("a");
-      a.href = url;
-      a.download = "students_template.xlsx";
-      a.click();
+      a.href = url; a.download = "students_template.xlsx"; a.click();
       URL.revokeObjectURL(url);
     } catch {
       toast({ title: "Download failed", variant: "destructive" });
-    } finally {
-      setDownloading(false);
-    }
+    } finally { setDownloading(false); }
   };
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -200,16 +291,8 @@ export default function StudentsPage() {
     } catch (err: any) {
       const msg = err?.response?.data?.detail ?? "Upload failed";
       toast({ title: "Upload error", description: msg, variant: "destructive" });
-    } finally {
-      setUploading(false);
-    }
+    } finally { setUploading(false); }
   };
-
-  const filtered = students.filter(s => {
-    if (!search) return true;
-    const q = search.toLowerCase();
-    return s.admission_no.toLowerCase().includes(q) || s.name.toLowerCase().includes(q) || (s.phone ?? "").includes(q);
-  });
 
   return (
     <div className="space-y-6">
@@ -217,7 +300,9 @@ export default function StudentsPage() {
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h2 className="text-xl font-bold">Students</h2>
-          <p className="text-sm text-muted-foreground">{students.length} students</p>
+          <p className="text-sm text-muted-foreground">
+            {students.filter(s => s.is_active).length} active · {students.filter(s => !s.is_active).length} inactive
+          </p>
         </div>
         <div className="flex gap-2">
           <input ref={fileRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleFileChange} />
@@ -265,57 +350,155 @@ export default function StudentsPage() {
               <p className="text-sm text-muted-foreground/60 mt-1">Upload an Excel file or add students manually.</p>
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b bg-muted/30">
-                    <th className="text-left px-5 py-3 font-semibold text-muted-foreground whitespace-nowrap">Adm. No</th>
-                    <th className="text-left px-4 py-3 font-semibold text-muted-foreground">Name</th>
-                    <th className="text-left px-4 py-3 font-semibold text-muted-foreground">Phone</th>
-                    <th className="text-left px-4 py-3 font-semibold text-muted-foreground">Status</th>
-                    <th className="text-right px-5 py-3 font-semibold text-muted-foreground">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y">
-                  {filtered.map(s => (
-                    <tr key={s.id} className="hover:bg-muted/20 transition-colors">
-                      <td className="px-5 py-3">
-                        <code className="text-xs font-mono font-semibold bg-muted px-2 py-0.5 rounded">
-                          {s.admission_no}
-                        </code>
-                      </td>
-                      <td className="px-4 py-3 font-medium">{s.name}</td>
-                      <td className="px-4 py-3 text-muted-foreground text-xs">
-                        {s.phone ?? <span className="italic text-muted-foreground/50">—</span>}
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${s.is_active ? "bg-emerald-100 text-emerald-700" : "bg-muted text-muted-foreground"}`}>
-                          {s.is_active ? "Active" : "Inactive"}
-                        </span>
-                      </td>
-                      <td className="px-5 py-3 text-right">
-                        <div className="flex items-center justify-end gap-1">
-                          <Button
-                            variant="ghost" size="icon" className="h-8 w-8"
-                            title="Edit student"
-                            onClick={() => { setEditItem(s); setDialogOpen(true); }}
-                          >
-                            <Pencil className="h-3.5 w-3.5" />
-                          </Button>
-                          <Button
-                            variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive"
-                            title="Delete student"
-                            onClick={() => setDeleteTarget(s)}
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </Button>
-                        </div>
-                      </td>
+            <>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b bg-muted/30">
+                      {/* Sortable: Adm. No */}
+                      <th className="text-left px-5 py-3 font-semibold text-muted-foreground whitespace-nowrap">
+                        <button
+                          className="inline-flex items-center hover:text-foreground transition-colors"
+                          onClick={() => toggleSort("admission_no")}
+                        >
+                          Adm. No <SortIcon field="admission_no" />
+                        </button>
+                      </th>
+                      {/* Sortable: Name */}
+                      <th className="text-left px-4 py-3 font-semibold text-muted-foreground">
+                        <button
+                          className="inline-flex items-center hover:text-foreground transition-colors"
+                          onClick={() => toggleSort("name")}
+                        >
+                          Name <SortIcon field="name" />
+                        </button>
+                      </th>
+                      <th className="text-left px-4 py-3 font-semibold text-muted-foreground">Phone</th>
+                      <th className="text-left px-4 py-3 font-semibold text-muted-foreground">
+                        <button
+                          className="inline-flex items-center hover:text-foreground transition-colors"
+                          onClick={() => toggleSort("is_active")}
+                        >
+                          Status <SortIcon field="is_active" />
+                        </button>
+                      </th>
+                      <th className="text-right px-5 py-3 font-semibold text-muted-foreground">Actions</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody className="divide-y">
+                    {paginated.map(s => (
+                      <tr key={s.id} className={`hover:bg-muted/20 transition-colors ${!s.is_active ? "opacity-50" : ""}`}>
+                        <td className="px-5 py-3">
+                          <code className="text-xs font-mono font-semibold bg-muted px-2 py-0.5 rounded">
+                            {s.admission_no}
+                          </code>
+                        </td>
+                        <td className="px-4 py-3 font-medium">{s.name}</td>
+                        <td className="px-4 py-3 text-muted-foreground text-xs">
+                          {s.phone ?? <span className="italic text-muted-foreground/50">—</span>}
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+                            <span className={`h-2 w-2 rounded-full flex-shrink-0 ${s.is_active ? "bg-emerald-500" : "bg-zinc-400"}`} />
+                            {s.is_active ? "Active" : "Inactive"}
+                          </span>
+                        </td>
+                        <td className="px-5 py-3 text-right">
+                          <div className="flex items-center justify-end gap-1">
+                            {s.is_active ? (
+                              <>
+                                <Button variant="ghost" size="icon" className="h-8 w-8" title="Edit student"
+                                  onClick={() => { setEditItem(s); setDialogOpen(true); }}>
+                                  <Pencil className="h-3.5 w-3.5" />
+                                </Button>
+                                <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive"
+                                  title="Deactivate / Remove student"
+                                  disabled={checkingHistory && deleteTarget?.id === s.id}
+                                  onClick={() => handleDeleteClick(s)}>
+                                  {checkingHistory && deleteTarget?.id === s.id
+                                    ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                    : <Trash2 className="h-3.5 w-3.5" />}
+                                </Button>
+                              </>
+                            ) : (
+                              <Button variant="ghost" size="icon" className="h-8 w-8 text-emerald-600 hover:text-emerald-700"
+                                title="Reactivate student"
+                                disabled={reactivateMutation.isPending && reactivateMutation.variables === s.id}
+                                onClick={() => reactivateMutation.mutate(s.id)}>
+                                {reactivateMutation.isPending && reactivateMutation.variables === s.id
+                                  ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                  : <RotateCcw className="h-3.5 w-3.5" />}
+                              </Button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Pagination bar */}
+              <div className="flex items-center justify-between px-5 py-3 border-t gap-4 flex-wrap">
+                {/* Rows per page */}
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <span>Rows per page:</span>
+                  <select
+                    value={pageSize}
+                    onChange={e => setPageSize(Number(e.target.value))}
+                    className="rounded border border-input bg-background px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+                  >
+                    {PAGE_SIZE_OPTIONS.map(n => (
+                      <option key={n} value={n}>{n}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Page info + controls */}
+                <div className="flex items-center gap-1 text-sm">
+                  <span className="text-muted-foreground mr-2">
+                    {(safePage - 1) * pageSize + 1}–{Math.min(safePage * pageSize, sorted.length)} of {sorted.length}
+                  </span>
+                  <Button variant="ghost" size="icon" className="h-8 w-8" disabled={safePage === 1} onClick={() => setPage(1)}>
+                    <ChevronsLeft className="h-4 w-4" />
+                  </Button>
+                  <Button variant="ghost" size="icon" className="h-8 w-8" disabled={safePage === 1} onClick={() => setPage(p => p - 1)}>
+                    <ChevronLeft className="h-4 w-4" />
+                  </Button>
+
+                  {/* Page number pills */}
+                  {Array.from({ length: totalPages }, (_, i) => i + 1)
+                    .filter(p => p === 1 || p === totalPages || Math.abs(p - safePage) <= 1)
+                    .reduce<(number | "…")[]>((acc, p, i, arr) => {
+                      if (i > 0 && (p as number) - (arr[i - 1] as number) > 1) acc.push("…");
+                      acc.push(p);
+                      return acc;
+                    }, [])
+                    .map((p, i) =>
+                      p === "…" ? (
+                        <span key={`ellipsis-${i}`} className="px-1 text-muted-foreground">…</span>
+                      ) : (
+                        <Button
+                          key={p}
+                          variant={safePage === p ? "default" : "ghost"}
+                          size="icon"
+                          className="h-8 w-8 text-sm"
+                          onClick={() => setPage(p as number)}
+                        >
+                          {p}
+                        </Button>
+                      )
+                    )}
+
+                  <Button variant="ghost" size="icon" className="h-8 w-8" disabled={safePage === totalPages} onClick={() => setPage(p => p + 1)}>
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                  <Button variant="ghost" size="icon" className="h-8 w-8" disabled={safePage === totalPages} onClick={() => setPage(totalPages)}>
+                    <ChevronsRight className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+            </>
           )}
         </CardContent>
       </Card>
@@ -326,15 +509,17 @@ export default function StudentsPage() {
         onClose={() => { setDialogOpen(false); setEditItem(null); }}
         editItem={editItem}
       />
-
       <ConfirmDialog
-        open={deleteTarget !== null}
-        title={`Delete "${deleteTarget?.name}"?`}
-        description={`Permanently removes student ${deleteTarget?.admission_no}.`}
+        open={deleteTarget !== null && deleteHasHistory !== null}
+        title={deleteHasHistory
+          ? `Deactivate "${deleteTarget?.name}"?`
+          : `Remove "${deleteTarget?.name}"?`}
+        description={deleteHasHistory
+          ? `This student has exam history. They will be marked inactive — all results and evaluations are preserved.`
+          : `This student has no exam history. They will be permanently removed from the system. This cannot be undone.`}
         onConfirm={() => { if (deleteTarget) deleteMutation.mutate(deleteTarget.id); }}
-        onCancel={() => setDeleteTarget(null)}
+        onCancel={() => { setDeleteTarget(null); setDeleteHasHistory(null); }}
       />
-
       {uploadResult && (
         <UploadResultDialog result={uploadResult} onClose={() => setUploadResult(null)} />
       )}

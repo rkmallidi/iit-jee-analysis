@@ -1,8 +1,10 @@
 """Exam schemas."""
 from datetime import date, datetime
-from typing import Literal, Optional
+from typing import Any, Literal, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
+
+VALID_QUESTION_TYPES = {"SCQ", "MCQ", "MSQ", "INT", "NUM", "NR", "ALT", "NUMERICAL_INT"}
 
 ExamType  = Literal["Mains", "Advanced"]
 PaperType = Literal["P1", "P2"]
@@ -60,6 +62,9 @@ class ExamCreate(BaseModel):
     exam_type: ExamType
     exam_date: date
     # paper is auto-determined: Mains → P1 only, Advanced → P1 + P2
+    mas_mathematics: Optional[float] = None
+    mas_physics: Optional[float] = None
+    mas_chemistry: Optional[float] = None
 
 
 class ExamUpdate(BaseModel):
@@ -68,6 +73,12 @@ class ExamUpdate(BaseModel):
     class_id: int | None = None
     exam_date: date | None = None
     # exam_type is not updatable (would require adding/removing paper records)
+    mas_mathematics: Optional[float] = None
+    mas_physics: Optional[float] = None
+    mas_chemistry: Optional[float] = None
+
+
+ExamStatus = Literal["draft", "published", "completed"]
 
 
 class ExamOut(BaseModel):
@@ -79,9 +90,15 @@ class ExamOut(BaseModel):
     exam_type: ExamType
     paper: PaperType
     exam_date: date
+    status: ExamStatus = "draft"
+    mas_mathematics: Optional[float] = None
+    mas_physics: Optional[float] = None
+    mas_chemistry: Optional[float] = None
     created_at: datetime
     updated_at: datetime
     question_count: int = 0
+    result_count: int = 0
+    upload_logs: list[Any] = []
 
     model_config = {"from_attributes": True}
 
@@ -121,6 +138,18 @@ class ExamQuestionUpdate(BaseModel):
     is_deleted: bool | None = None
     is_bonus: bool | None = None
     akc: str | None = None
+
+    @field_validator("question_type", mode="before")
+    @classmethod
+    def validate_question_type(cls, v):
+        if v is None:
+            return v
+        normalised = str(v).strip().upper()
+        if normalised not in VALID_QUESTION_TYPES:
+            raise ValueError(
+                f"Invalid question_type '{v}'. Must be one of: {', '.join(sorted(VALID_QUESTION_TYPES))}"
+            )
+        return normalised
 
 
 class ExamQuestionUploadResult(BaseModel):

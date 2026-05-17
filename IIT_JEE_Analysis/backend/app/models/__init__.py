@@ -18,3 +18,5 @@ from app.models.student_section import StudentSection  # noqa: F401
 from app.models.exam import Exam  # noqa: F401
 from app.models.exam_question import ExamQuestion  # noqa: F401
 from app.models.exam_result import ExamResult  # noqa: F401
+from app.models.exam_upload_log import ExamUploadLog  # noqa: F401
+from app.models.student_evaluation import StudentEvaluation, StudentCumulativeEvaluation  # noqa: F401

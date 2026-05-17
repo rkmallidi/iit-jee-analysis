@@ -108,5 +108,5 @@ def update_user_theme(db: Session, user: User, theme_prefs: dict) -> User:
 
 
 def delete_user(db: Session, user: User) -> None:
-    db.delete(user)
+    user.is_active = False
     db.commit()

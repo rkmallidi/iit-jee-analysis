@@ -113,9 +113,34 @@ def update_student(db: Session, student: Student, data: StudentUpdate) -> Studen
     return student
 
 
-def delete_student(db: Session, student: Student) -> None:
+def has_history(db: Session, student: Student) -> bool:
+    """Returns True if the student has any exam results or evaluations."""
+    from sqlalchemy import select
+    from app.models.exam_result import ExamResult
+    has_results = db.scalar(
+        select(ExamResult.id).where(ExamResult.student_id == student.id).limit(1)
+    )
+    return has_results is not None
+
+
+def reactivate_student(db: Session, student: Student) -> Student:
+    student.is_active = True
+    db.commit()
+    db.refresh(student)
+    student.section_mapping = None  # type: ignore[attr-defined]
+    return student
+
+
+def delete_student(db: Session, student: Student) -> dict:
+    """Soft-deletes if history exists, hard-deletes otherwise.
+    Returns {"action": "deactivated"} or {"action": "deleted"}."""
+    if has_history(db, student):
+        student.is_active = False
+        db.commit()
+        return {"action": "deactivated"}
     db.delete(student)
     db.commit()
+    return {"action": "deleted"}
 
 
 # ── Section mapping (year-scoped) ─────────────────────────────────────────────

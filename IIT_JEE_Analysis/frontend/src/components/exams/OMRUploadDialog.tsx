@@ -12,18 +12,20 @@ import type { Exam, OMRValidationSummary, OMRValidationRecord } from "@/types";
 
 interface OMRUploadDialogProps {
   exam: Exam;
+  branchId: number;
+  branchName: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
 
-export default function OMRUploadDialog({ exam, open, onOpenChange }: OMRUploadDialogProps) {
+export default function OMRUploadDialog({ exam, branchId, branchName, open, onOpenChange }: OMRUploadDialogProps) {
   const qc = useQueryClient();
   const [file, setFile] = useState<File | null>(null);
   const [validation, setValidation] = useState<OMRValidationSummary | null>(null);
   const [stage, setStage] = useState<"upload" | "review" | "saving">("upload");
 
   const validateMutation = useMutation({
-    mutationFn: (f: File) => validateOMRFile(exam.id, f).then(r => r.data),
+    mutationFn: (f: File) => validateOMRFile(exam.id, branchId, f).then(r => r.data),
     onSuccess: (data) => {
       setValidation(data);
       setStage("review");
@@ -36,13 +38,28 @@ export default function OMRUploadDialog({ exam, open, onOpenChange }: OMRUploadD
 
   const saveMutation = useMutation({
     mutationFn: (records: OMRValidationRecord[]) =>
-      saveOMRResults(exam.id, records).then(r => r.data),
+      saveOMRResults(exam.id, branchId, records, {
+        file_name: file?.name ?? "",
+        valid_count: validation?.valid_count ?? 0,
+        absent_count: validation?.missing_students.length ?? 0,
+        duplicate_count: validation?.duplicate_ids.length ?? 0,
+        invalid_count: validation?.invalid_student_ids.length ?? 0,
+        absent_list: validation?.missing_students ?? [],
+      }).then(r => r.data),
     onSuccess: (data: any) => {
+      qc.invalidateQueries({ queryKey: ["exams"] });
+      if (data.errors?.length) {
+        toast({
+          title: `${data.saved} saved, ${data.errors.length} skipped`,
+          description: data.errors.join("\n"),
+          variant: "destructive",
+        });
+      } else {
+        toast({ title: `${data.saved} results saved successfully` });
+      }
       setStage("upload");
       setFile(null);
       setValidation(null);
-      qc.invalidateQueries({ queryKey: ["exam_results", exam.id] });
-      toast({ title: `${data.saved} results saved successfully` });
       onOpenChange(false);
     },
     onError: (err: any) => {
@@ -87,7 +104,7 @@ export default function OMRUploadDialog({ exam, open, onOpenChange }: OMRUploadD
         <DialogHeader>
           <DialogTitle>Upload OMR Results</DialogTitle>
           <p className="text-xs text-muted-foreground mt-1">
-            {exam.exam_code} • {exam.paper} • {new Date(exam.exam_date).toLocaleDateString()}
+            {exam.exam_code} • {exam.paper} • {branchName} • {new Date(exam.exam_date).toLocaleDateString()}
           </p>
         </DialogHeader>
 

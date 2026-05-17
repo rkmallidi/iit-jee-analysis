@@ -1,8 +1,9 @@
 import { NavLink } from "react-router-dom";
 import {
-  LayoutDashboard, Users, School, BookOpen, SquareStack, Grid3x3,
-  Network, Settings, GraduationCap, ChevronLeft, ChevronRight, BookUser,
-  CalendarDays, UserCheck, BookOpenCheck, CalendarCheck, Scan,
+  LayoutDashboard, Users, Settings2,
+  Network, Settings, GraduationCap, ChevronLeft, ChevronRight, IdCard,
+  UserCheck, CalendarCheck, Scan, BarChart2,
+  TrendingUp, UserCircle2, Upload,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/store/auth";
@@ -15,10 +16,10 @@ interface SidebarProps {
 
 interface NavItem {
   to: string;
-  icon: any;
+  icon: React.ElementType;
   label: string;
   end?: boolean;
-  adminOnly?: boolean;
+  visible: () => boolean;
 }
 
 interface NavGroup {
@@ -28,46 +29,89 @@ interface NavGroup {
 
 // ── Nav structure ──────────────────────────────────────────────────────────────
 
-const NAV_GROUPS: NavGroup[] = [
-  {
-    items: [
-      { to: "/", icon: LayoutDashboard, label: "Dashboard", end: true },
-    ],
-  },
-  {
-    label: "Master Data",
-    items: [
-      { to: "/academic-years", icon: CalendarDays, label: "Academic Years" },
-      { to: "/branches",       icon: School,        label: "Branches" },
-      { to: "/programs",       icon: BookOpen,       label: "Programs" },
-      { to: "/classes",        icon: SquareStack,    label: "Classes" },
-      { to: "/sections",       icon: Grid3x3,        label: "Sections" },
-      { to: "/students",       icon: BookUser,       label: "Students" },
-      { to: "/users",          icon: Users,          label: "Users",    adminOnly: true },
-    ],
-  },
-  {
-    label: "Per Academic Year",
-    items: [
-      { to: "/mappings",         icon: Network,    label: "Branch Configuration" },
-      { to: "/student-mapping",  icon: UserCheck,      label: "Student Mapping" },
-      { to: "/exams",            icon: CalendarCheck,  label: "Exams" },
-      { to: "/results",          icon: Scan,           label: "OMR Results" },
-    ],
-  },
-  {
-    label: "System",
-    items: [
-      { to: "/settings", icon: Settings, label: "Settings" },
-    ],
-  },
-];
+function useNavGroups(): NavGroup[] {
+  const {
+    isAdmin, isOperator, canAccessMasterData, canAccessMappings,
+    canAccessStudents, canAccessExams, canUploadOMR, canAccessResults,
+    canAccessAnalytics,
+  } = useAuthStore();
+
+  return [
+    {
+      items: [
+        {
+          to: "/", icon: LayoutDashboard, label: "Dashboard", end: true,
+          visible: () => !isOperator(),
+        },
+      ],
+    },
+    {
+      label: "Management",
+      items: [
+        {
+          to: "/master-data", icon: Settings2, label: "Institute Setup",
+          visible: canAccessMasterData,
+        },
+        {
+          to: "/students", icon: IdCard, label: "Students",
+          visible: canAccessStudents,
+        },
+        {
+          to: "/users", icon: Users, label: "Users",
+          visible: isAdmin,
+        },
+      ],
+    },
+    {
+      label: "Per Academic Year",
+      items: [
+        {
+          to: "/mappings", icon: Network, label: "Branch Configuration",
+          visible: canAccessMappings,
+        },
+        {
+          to: "/student-mapping", icon: UserCheck, label: "Student Mapping",
+          visible: canAccessMappings,
+        },
+        {
+          to: "/exams", icon: CalendarCheck, label: "Exams",
+          visible: canAccessExams,
+        },
+        {
+          to: "/results", icon: canUploadOMR() ? Upload : Scan, label: "OMR Results",
+          visible: canUploadOMR,
+        },
+        {
+          to: "/branch-results", icon: BarChart2, label: "Branch Results",
+          visible: canAccessResults,
+        },
+        {
+          to: "/analytics", icon: TrendingUp, label: "Analytics",
+          visible: canAccessAnalytics,
+        },
+        {
+          to: "/student-report", icon: UserCircle2, label: "Student Report",
+          visible: canAccessAnalytics,
+        },
+      ],
+    },
+    {
+      label: "System",
+      items: [
+        {
+          to: "/settings", icon: Settings, label: "Settings",
+          visible: () => true,
+        },
+      ],
+    },
+  ];
+}
 
 // ── Sidebar ────────────────────────────────────────────────────────────────────
 
 export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
-  const { user, isAdmin } = useAuthStore();
-  const admin = isAdmin();
+  const { user } = useAuthStore();
+  const navGroups = useNavGroups();
 
   return (
     <aside
@@ -94,10 +138,8 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
 
       {/* Nav */}
       <nav className="flex-1 overflow-y-auto py-3 space-y-4 px-2">
-        {NAV_GROUPS.map((group, gi) => {
-          const visibleItems = group.items.filter(item =>
-            !("adminOnly" in item && item.adminOnly && !admin)
-          );
+        {navGroups.map((group, gi) => {
+          const visibleItems = group.items.filter(item => item.visible());
           if (visibleItems.length === 0) return null;
 
           return (
