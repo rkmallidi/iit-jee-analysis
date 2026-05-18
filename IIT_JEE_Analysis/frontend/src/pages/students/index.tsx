@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
+import * as XLSX from "xlsx";
 import {
   Plus, Search, Pencil, Trash2, Loader2,
   FileSpreadsheet, Download, X, CheckCircle2, AlertCircle,
@@ -294,6 +295,28 @@ export default function StudentsPage() {
     } finally { setUploading(false); }
   };
 
+  const handleExportExcel = () => {
+    const rows = filtered.map(s => ({
+      "Admission No":  s.admission_no,
+      "Name":          s.name,
+      "Phone":         s.phone ?? "",
+      "Target Rank":   s.target_rank ?? "",
+      "Status":        s.is_active ? "Active" : "Inactive",
+      "Branch":        s.section_mapping?.branch_section?.branch_id ?? "",
+      "Created At":    new Date(s.created_at).toLocaleDateString("en-IN"),
+    }));
+    const ws = XLSX.utils.json_to_sheet(rows);
+    // Column widths
+    ws["!cols"] = [
+      { wch: 16 }, { wch: 30 }, { wch: 16 }, { wch: 16 }, { wch: 10 }, { wch: 10 }, { wch: 14 },
+    ];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Students");
+    const date = new Date().toISOString().slice(0, 10);
+    XLSX.writeFile(wb, `students_export_${date}.xlsx`);
+    toast({ title: "Exported", description: `${rows.length} students exported to Excel.` });
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -313,6 +336,10 @@ export default function StudentsPage() {
           <Button variant="outline" onClick={() => fileRef.current?.click()} disabled={uploading}>
             {uploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FileSpreadsheet className="mr-2 h-4 w-4" />}
             Upload Excel
+          </Button>
+          <Button variant="outline" onClick={handleExportExcel} disabled={filtered.length === 0}>
+            <Download className="mr-2 h-4 w-4 text-emerald-600" />
+            Export Excel
           </Button>
           <Button onClick={() => { setEditItem(null); setDialogOpen(true); }}>
             <Plus className="mr-2 h-4 w-4" /> Add Student

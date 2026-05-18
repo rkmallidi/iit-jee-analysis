@@ -1,9 +1,9 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo, memo, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAcademicYearStore } from "@/store/academicYear";
 import {
   School, Eye, Plus, Trash2, ChevronDown, ChevronRight,
-  Loader2, CheckCircle2, AlertCircle, Search, X, Pencil, Phone, Mail, Users,
+  Loader2, CheckCircle2, AlertCircle, Search, X, Phone, Mail, Users,
 } from "lucide-react";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 
@@ -117,43 +117,73 @@ function BranchDashboardTab() {
   const [addingVicePrincipal, setAddingVicePrincipal] = useState<Record<number, string>>({});
   const [addingOperator, setAddingOperator] = useState<Record<number, string>>({});
   const [pendingAction, setPendingAction] = useState<{ fn: () => void; title: string; description: string } | null>(null);
-  const [editingFaculty, setEditingFaculty] = useState<Set<string>>(new Set());
   const [studentViewBs, setStudentViewBs] = useState<BranchSection | null>(null);
 
-  const { data: branches = [] } = useQuery({ queryKey: ["branches"], queryFn: () => getBranches().then(r => r.data) });
-  const { data: programs = [] } = useQuery({ queryKey: ["programs"], queryFn: () => getPrograms().then(r => r.data) });
-  const { data: classes = [] } = useQuery({ queryKey: ["classes"], queryFn: () => getClasses().then(r => r.data) });
-  const { data: sections = [] } = useQuery({ queryKey: ["sections"], queryFn: () => getSections().then(r => r.data) });
-  const { data: users = [] } = useQuery({ queryKey: ["users"], queryFn: () => getUsers().then(r => r.data) });
+  const STALE = 60_000; // 1 min — static reference data changes rarely
+  const { data: branches = [] } = useQuery({ queryKey: ["branches"], queryFn: () => getBranches().then(r => r.data), staleTime: STALE });
+  const { data: programs = [] } = useQuery({ queryKey: ["programs"], queryFn: () => getPrograms().then(r => r.data), staleTime: STALE });
+  const { data: classes = [] }  = useQuery({ queryKey: ["classes"],  queryFn: () => getClasses().then(r => r.data),  staleTime: STALE });
+  const { data: sections = [] } = useQuery({ queryKey: ["sections"], queryFn: () => getSections().then(r => r.data), staleTime: STALE });
+  const { data: users = [] }    = useQuery({ queryKey: ["users"],    queryFn: () => getUsers().then(r => r.data),    staleTime: STALE });
   const { data: bsections = [] } = useQuery({
     queryKey: ["branch-sections", yearId],
     queryFn: () => getBranchSections({ academic_year_id: yearId }).then(r => r.data),
+    staleTime: STALE,
   });
   const { data: branchPrograms = [] } = useQuery({
     queryKey: ["branch-programs", yearId],
     queryFn: () => getBranchPrograms({ academic_year_id: yearId }).then(r => r.data),
+    staleTime: STALE,
   });
-  const { data: deanMaps = [] } = useQuery({ queryKey: ["dean-branches"], queryFn: () => getDeanBranches().then(r => r.data) });
-  const { data: principalMaps = [] } = useQuery({ queryKey: ["principal-branches"], queryFn: () => getPrincipalBranches().then(r => r.data) });
-  const { data: vicePrincipalMaps = [] } = useQuery({ queryKey: ["vice-principal-branches"], queryFn: () => getVicePrincipalBranches().then(r => r.data) });
-  const { data: operatorMaps = [] } = useQuery({ queryKey: ["operator-branches"], queryFn: () => getOperatorBranches().then(r => r.data) });
-  const { data: facultyMaps = [] } = useQuery({ queryKey: ["faculty-sections"], queryFn: () => getFacultySections().then(r => r.data) });
+  const { data: deanMaps = [] }          = useQuery({ queryKey: ["dean-branches"],           queryFn: () => getDeanBranches().then(r => r.data),          staleTime: STALE });
+  const { data: principalMaps = [] }     = useQuery({ queryKey: ["principal-branches"],      queryFn: () => getPrincipalBranches().then(r => r.data),     staleTime: STALE });
+  const { data: vicePrincipalMaps = [] } = useQuery({ queryKey: ["vice-principal-branches"], queryFn: () => getVicePrincipalBranches().then(r => r.data), staleTime: STALE });
+  const { data: operatorMaps = [] }      = useQuery({ queryKey: ["operator-branches"],       queryFn: () => getOperatorBranches().then(r => r.data),      staleTime: STALE });
+  const { data: facultyMaps = [] }       = useQuery({ queryKey: ["faculty-sections"],        queryFn: () => getFacultySections().then(r => r.data),       staleTime: STALE });
   const { data: students = [] } = useQuery({
     queryKey: ["students", yearId],
     queryFn: () => getStudents({ academic_year_id: yearId }).then(r => r.data),
     enabled: !!yearId,
+    staleTime: STALE,
   });
 
-  // Count students per branch-section slot and per branch
-  const studentCountByBsId = students.reduce<Record<number, number>>((acc, s) => {
+  // --- Pre-compute lookup Maps once per data change (eliminates O(n²) .filter() in render) ---
+  const userById = useMemo(() => new Map(users.map(u => [u.id, u])), [users]);
+
+  const studentCountByBsId = useMemo(() => students.reduce<Record<number, number>>((acc, s) => {
     const bsId = s.section_mapping?.branch_section_id;
     if (bsId) acc[bsId] = (acc[bsId] ?? 0) + 1;
     return acc;
-  }, {});
-  const studentCountByBranchId = bsections.reduce<Record<number, number>>((acc, bs) => {
+  }, {}), [students]);
+
+  const studentCountByBranchId = useMemo(() => bsections.reduce<Record<number, number>>((acc, bs) => {
     acc[bs.branch_id] = (acc[bs.branch_id] ?? 0) + (studentCountByBsId[bs.id] ?? 0);
     return acc;
-  }, {});
+  }, {}), [bsections, studentCountByBsId]);
+
+  // Group bsections by branch_id once, not per-branch in render
+  const bsectionsByBranch = useMemo(() => bsections.reduce<Record<number, BranchSection[]>>((acc, bs) => {
+    (acc[bs.branch_id] ??= []).push(bs);
+    return acc;
+  }, {}), [bsections]);
+
+  // Map dean/principal/vp/operator maps by branch_id for O(1) lookup
+  const deansByBranch    = useMemo(() => deanMaps.reduce<Record<number, typeof deanMaps>>((acc, d) => { (acc[d.branch_id] ??= []).push(d); return acc; }, {}), [deanMaps]);
+  const principalsByBranch = useMemo(() => principalMaps.reduce<Record<number, typeof principalMaps>>((acc, p) => { (acc[p.branch_id] ??= []).push(p); return acc; }, {}), [principalMaps]);
+  const vpByBranch       = useMemo(() => vicePrincipalMaps.reduce<Record<number, typeof vicePrincipalMaps>>((acc, v) => { (acc[v.branch_id] ??= []).push(v); return acc; }, {}), [vicePrincipalMaps]);
+  const operatorsByBranch = useMemo(() => operatorMaps.reduce<Record<number, typeof operatorMaps>>((acc, o) => { (acc[o.branch_id] ??= []).push(o); return acc; }, {}), [operatorMaps]);
+
+  // Faculty maps grouped by branch_section_id for O(1) subject-row lookup
+  const facultyByBsId = useMemo(() => facultyMaps.reduce<Record<number, typeof facultyMaps>>((acc, fm) => {
+    (acc[fm.branch_section_id] ??= []).push(fm);
+    return acc;
+  }, {}), [facultyMaps]);
+
+  // Branch programs grouped by branch_id
+  const bpByBranch = useMemo(() => branchPrograms.reduce<Record<number, typeof branchPrograms>>((acc, bp) => {
+    (acc[bp.branch_id] ??= []).push(bp);
+    return acc;
+  }, {}), [branchPrograms]);
 
   const addBranchProgram = useMutation({
     mutationFn: ({ branchId, programId }: { branchId: number; programId: number }) =>
@@ -252,30 +282,43 @@ function BranchDashboardTab() {
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["faculty-sections"] }); toast({ title: "Faculty removed" }); },
   });
 
-  const deans = users.filter(u => u.roles.some(r => r.name === "Dean"));
-  const principals = users.filter(u => u.roles.some(r => r.name === "Principal"));
-  const vicePrincipals = users.filter(u => u.roles.some(r => r.name === "Vice-Principal"));
-  const operators = users.filter(u => u.roles.some(r => r.name === "Operator"));
-  const faculty = users.filter(u => u.roles.some(r => r.name === "Faculty"));
+  const deans        = useMemo(() => users.filter(u => u.roles.some(r => r.name === "Dean")),           [users]);
+  const principals   = useMemo(() => users.filter(u => u.roles.some(r => r.name === "Principal")),      [users]);
+  const vicePrincipals = useMemo(() => users.filter(u => u.roles.some(r => r.name === "Vice-Principal")), [users]);
+  const operators    = useMemo(() => users.filter(u => u.roles.some(r => r.name === "Operator")),       [users]);
+  const faculty      = useMemo(() => users.filter(u => u.roles.some(r => r.name === "Faculty")),        [users]);
 
   const SUBJECTS: SubjectName[] = ["Mathematics", "Physics", "Chemistry"];
   const totalSlots = bsections.length;
-  const isFullyStaffedSlot = (bsId: number) =>
-    SUBJECTS.every(subj => facultyMaps.some(fm => fm.branch_section_id === bsId && fm.subject === subj));
-  const staffedSlots = bsections.filter(bs => isFullyStaffedSlot(bs.id)).length;
 
-  const filtered = branches.filter(b =>
-    b.name.toLowerCase().includes(search.toLowerCase()) ||
-    b.code.toLowerCase().includes(search.toLowerCase())
-  );
+  // Compute staffed slot IDs once — O(facultyMaps) instead of O(slots × faculty) per render
+  const staffedSlotIds = useMemo(() => {
+    const subjsByBsId: Record<number, Set<string>> = {};
+    for (const fm of facultyMaps) {
+      (subjsByBsId[fm.branch_section_id] ??= new Set()).add(fm.subject);
+    }
+    return new Set(
+      Object.entries(subjsByBsId)
+        .filter(([, subjs]) => SUBJECTS.every(s => subjs.has(s)))
+        .map(([id]) => +id)
+    );
+  }, [facultyMaps]);
 
-  const toggleExpand = (id: number) => {
+  const isFullyStaffedSlot = useCallback((bsId: number) => staffedSlotIds.has(bsId), [staffedSlotIds]);
+  const staffedSlots = staffedSlotIds.size;
+
+  const filtered = useMemo(() => {
+    const q = search.toLowerCase();
+    return q ? branches.filter(b => b.name.toLowerCase().includes(q) || b.code.toLowerCase().includes(q)) : branches;
+  }, [branches, search]);
+
+  const toggleExpand = useCallback((id: number) => {
     setExpanded(prev => {
       const next = new Set(prev);
       next.has(id) ? next.delete(id) : next.add(id);
       return next;
     });
-  };
+  }, []);
 
   return (
     <div className="space-y-4">
@@ -289,7 +332,7 @@ function BranchDashboardTab() {
         {[
           { label: "Branches", value: branches.length, cls: "text-blue-600" },
           { label: "Section Slots", value: totalSlots, cls: "text-violet-600" },
-          { label: "Total Students", value: students.filter(s => s.section_mapping).length, cls: "text-sky-600" },
+          { label: "Total Students", value: Object.values(studentCountByBsId).reduce((a, b) => a + b, 0), cls: "text-sky-600" },
           { label: "Staffed Slots", value: staffedSlots, cls: "text-emerald-600" },
           { label: "Unstaffed", value: totalSlots - staffedSlots, cls: totalSlots > staffedSlots ? "text-amber-600" : "text-muted-foreground" },
         ].map(s => (
@@ -315,12 +358,12 @@ function BranchDashboardTab() {
       <div className="space-y-3">
         {filtered.map(branch => {
           const isExpanded = expanded.has(branch.id);
-          const branchSlots = bsections.filter(bs => bs.branch_id === branch.id);
-          const branchDeans = deanMaps.filter(d => d.branch_id === branch.id);
-          const branchPrincipals = principalMaps.filter(p => p.branch_id === branch.id);
-          const branchVicePrincipals = vicePrincipalMaps.filter(v => v.branch_id === branch.id);
-          const branchOperators = operatorMaps.filter(o => o.branch_id === branch.id);
-          const staffedCount = branchSlots.filter(bs => isFullyStaffedSlot(bs.id)).length;
+          const branchSlots = bsectionsByBranch[branch.id] ?? [];
+          const branchDeans = deansByBranch[branch.id] ?? [];
+          const branchPrincipals = principalsByBranch[branch.id] ?? [];
+          const branchVicePrincipals = vpByBranch[branch.id] ?? [];
+          const branchOperators = operatorsByBranch[branch.id] ?? [];
+          const staffedCount = branchSlots.filter(bs => staffedSlotIds.has(bs.id)).length;
           const slotForm = addingSlot[branch.id] ?? { programId: "", classId: "", sectionId: "" };
 
           // Group: programId → classId → slots[]
@@ -337,7 +380,7 @@ function BranchDashboardTab() {
           const availablePrincipals = principals.filter(u => !assignedPrincipalIds.has(u.id));
           const isFullyStaffed = branchSlots.length > 0 && staffedCount === branchSlots.length;
 
-          const assignedBranchPrograms = branchPrograms.filter(bp => bp.branch_id === branch.id);
+          const assignedBranchPrograms = bpByBranch[branch.id] ?? [];
           const assignedProgramIds = new Set(assignedBranchPrograms.map(bp => bp.program_id));
           const availablePrograms = programs.filter(p => !assignedProgramIds.has(p.id));
           const slotPrograms = programs.filter(p => assignedProgramIds.has(p.id));
@@ -361,7 +404,7 @@ function BranchDashboardTab() {
                         <span className="flex items-center gap-1 text-[10px]">
                           <span className="text-muted-foreground/60 font-semibold">Dean</span>
                           {branchDeans.map(d => {
-                            const u = users.find(u => u.id === d.user_id);
+                            const u = userById.get(d.user_id);
                             return <span key={d.id} className="text-violet-700 font-medium">{u?.full_name ?? `#${d.user_id}`}</span>;
                           })}
                         </span>
@@ -373,7 +416,7 @@ function BranchDashboardTab() {
                         <span className="flex items-center gap-1 text-[10px]">
                           <span className="text-muted-foreground/60 font-semibold">Principal</span>
                           {branchPrincipals.map(p => {
-                            const u = users.find(u => u.id === p.user_id);
+                            const u = userById.get(p.user_id);
                             return <span key={p.id} className="text-amber-700 font-medium">{u?.full_name ?? `#${p.user_id}`}</span>;
                           })}
                         </span>
@@ -382,7 +425,7 @@ function BranchDashboardTab() {
                         <span className="flex items-center gap-1 text-[10px]">
                           <span className="text-muted-foreground/60 font-semibold">V.P.</span>
                           {branchVicePrincipals.map(v => {
-                            const u = users.find(u => u.id === v.user_id);
+                            const u = userById.get(v.user_id);
                             return <span key={v.id} className="text-orange-700 font-medium">{u?.full_name ?? `#${v.user_id}`}</span>;
                           })}
                         </span>
@@ -391,7 +434,7 @@ function BranchDashboardTab() {
                         <span className="flex items-center gap-1 text-[10px]">
                           <span className="text-muted-foreground/60 font-semibold">Op</span>
                           {branchOperators.map(o => {
-                            const u = users.find(u => u.id === o.user_id);
+                            const u = userById.get(o.user_id);
                             return <span key={o.id} className="text-cyan-700 font-medium">{u?.full_name ?? `#${o.user_id}`}</span>;
                           })}
                         </span>
@@ -429,7 +472,7 @@ function BranchDashboardTab() {
                     <div className="flex items-center gap-1.5 flex-wrap">
                       <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide w-12">Dean</span>
                       {branchDeans.map(d => {
-                        const u = users.find(u => u.id === d.user_id);
+                        const u = userById.get(d.user_id);
                         const name = u?.full_name ?? `#${d.user_id}`;
                         return (
                           <span key={d.id} className="inline-flex items-center gap-1 rounded-full bg-violet-100 text-violet-700 border border-violet-200 px-2 py-0 text-[11px] font-medium">
@@ -452,7 +495,7 @@ function BranchDashboardTab() {
                     <div className="flex items-center gap-1.5 flex-wrap">
                       <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide w-14">Principal</span>
                       {branchPrincipals.map(p => {
-                        const u = users.find(u => u.id === p.user_id);
+                        const u = userById.get(p.user_id);
                         const name = u?.full_name ?? `#${p.user_id}`;
                         return (
                           <span key={p.id} className="inline-flex items-center gap-1 rounded-full bg-amber-100 text-amber-700 border border-amber-200 px-2 py-0 text-[11px] font-medium">
@@ -475,7 +518,7 @@ function BranchDashboardTab() {
                     <div className="flex items-center gap-1.5 flex-wrap">
                       <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide w-16">V.Principal</span>
                       {branchVicePrincipals.map(v => {
-                        const u = users.find(u => u.id === v.user_id);
+                        const u = userById.get(v.user_id);
                         const name = u?.full_name ?? `#${v.user_id}`;
                         return (
                           <span key={v.id} className="inline-flex items-center gap-1 rounded-full bg-orange-100 text-orange-700 border border-orange-200 px-2 py-0 text-[11px] font-medium">
@@ -498,7 +541,7 @@ function BranchDashboardTab() {
                     <div className="flex items-center gap-1.5 flex-wrap">
                       <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide w-12">Operator</span>
                       {branchOperators.map(o => {
-                        const u = users.find(u => u.id === o.user_id);
+                        const u = userById.get(o.user_id);
                         const name = u?.full_name ?? `#${o.user_id}`;
                         return (
                           <span key={o.id} className="inline-flex items-center gap-1 rounded-full bg-cyan-100 text-cyan-700 border border-cyan-200 px-2 py-0 text-[11px] font-medium">
@@ -572,7 +615,7 @@ function BranchDashboardTab() {
                                 const cls = classes.find(c => c.id === +classIdStr);
                                 return (
                                   <div key={classIdStr}>
-                                    <p className="text-[10px] font-semibold text-muted-foreground mb-1 uppercase tracking-wide">
+                                    <p className="text-xs font-semibold text-muted-foreground mb-1 uppercase tracking-wide">
                                       {cls?.name ?? `Class #${classIdStr}`}
                                     </p>
                                     <div className="grid grid-cols-2 gap-1">
@@ -583,73 +626,93 @@ function BranchDashboardTab() {
                                         return (
                                           <div key={bs.id} className="rounded-md border bg-background hover:border-primary/30 transition-colors">
                                             {/* Slot header */}
-                                            <div className="flex items-center gap-1.5 px-2.5 py-1 border-b bg-muted/20">
-                                              <span className="text-[11px] font-semibold text-muted-foreground">{prog?.name}</span>
-                                              <ChevronRight className="h-2.5 w-2.5 text-muted-foreground shrink-0" />
-                                              <span className="text-[11px] font-semibold text-muted-foreground">{cls?.name}</span>
-                                              <ChevronRight className="h-2.5 w-2.5 text-muted-foreground shrink-0" />
-                                              <Badge variant="secondary" className="shrink-0 text-[11px] font-semibold px-1.5 py-0">
+                                            <div className="flex items-center gap-1.5 px-2.5 py-1.5 border-b bg-muted/20">
+                                              <span className="text-xs font-semibold text-muted-foreground">{prog?.name}</span>
+                                              <ChevronRight className="h-3 w-3 text-muted-foreground shrink-0" />
+                                              <span className="text-xs font-semibold text-muted-foreground">{cls?.name}</span>
+                                              <ChevronRight className="h-3 w-3 text-muted-foreground shrink-0" />
+                                              <Badge variant="secondary" className="shrink-0 text-xs font-semibold px-1.5 py-0">
                                                 {sec?.name ?? `S${bs.section_id}`}
                                               </Badge>
                                               {yearId && (
                                                 <button
                                                   onClick={() => setStudentViewBs(bs)}
-                                                  className="flex items-center gap-1 text-[10px] font-semibold text-sky-600 hover:text-sky-700 hover:underline transition-colors"
+                                                  className="flex items-center gap-1 text-xs font-semibold text-sky-600 hover:text-sky-700 hover:underline transition-colors"
                                                   title="View students"
                                                 >
-                                                  <Users className="h-2.5 w-2.5" />
+                                                  <Users className="h-3 w-3" />
                                                   {studentCountByBsId[bs.id] ?? 0}
                                                 </button>
                                               )}
-                                              <span className={`ml-auto text-[10px] font-medium ${slotFull ? "text-emerald-600" : "text-amber-600"}`}>
-                                                {slotFull ? "✓ staffed" : `${SUBJECTS.filter(subj => facultyMaps.some(fm => fm.branch_section_id === bs.id && fm.subject === subj)).length}/3`}
+                                              <span className={`ml-auto text-[11px] font-medium ${slotFull ? "text-emerald-600" : "text-amber-600"}`}>
+                                                {slotFull ? "✓ staffed" : `${SUBJECTS.filter(subj => (facultyByBsId[bs.id] ?? []).some(fm => fm.subject === subj)).length}/3 subjects`}
                                               </span>
                                               <button
                                                 onClick={() => setPendingAction({ fn: () => deleteSlot.mutate(bs.id), title: "Delete Section Slot", description: `Delete slot "${sec?.name ?? `S${bs.section_id}`}"? This will also remove all faculty assignments for this slot.` })}
                                                 className="text-muted-foreground hover:text-destructive transition-colors shrink-0"
                                               >
-                                                <Trash2 className="h-2.5 w-2.5" />
+                                                <Trash2 className="h-3 w-3" />
                                               </button>
                                             </div>
 
-                                            {/* Subject rows */}
+                                            {/* Subject rows — multiple faculty per subject allowed */}
                                             <div className="divide-y">
                                               {SUBJECTS.map(subj => {
-                                                const fm = facultyMaps.find(f => f.branch_section_id === bs.id && f.subject === subj);
-                                                const assignedUser = fm ? users.find(u => u.id === fm.user_id) : null;
-                                                const editKey = `${bs.id}-${subj}`;
-                                                const isEditing = editingFaculty.has(editKey);
-                                                const toggleEdit = () => setEditingFaculty(prev => { const next = new Set(prev); next.has(editKey) ? next.delete(editKey) : next.add(editKey); return next; });
+                                                const slotFms = facultyByBsId[bs.id] ?? [];
+                                                const subjFms = slotFms.filter(f => f.subject === subj);
+                                                const assignedIds = new Set(subjFms.map(f => f.user_id));
+                                                const available = faculty.filter(u => !assignedIds.has(u.id));
+                                                const hasAny = subjFms.length > 0;
+                                                const subjColor = subj === "Mathematics" ? "text-blue-600" : subj === "Physics" ? "text-purple-600" : "text-green-600";
+                                                const subjShort = subj === "Mathematics" ? "Maths" : subj;
+                                                const chipCls  = subj === "Mathematics"
+                                                  ? "bg-blue-50 border-blue-200 text-blue-700"
+                                                  : subj === "Physics"
+                                                  ? "bg-purple-50 border-purple-200 text-purple-700"
+                                                  : "bg-green-50 border-green-200 text-green-700";
+                                                const avatarCls = subj === "Mathematics"
+                                                  ? "bg-blue-200"
+                                                  : subj === "Physics"
+                                                  ? "bg-purple-200"
+                                                  : "bg-green-200";
                                                 return (
-                                                  <div key={subj} className="group flex items-center gap-2 px-2.5 py-1">
-                                                    <span className={`w-16 shrink-0 text-[10px] font-semibold ${subj === "Mathematics" ? "text-blue-600" : subj === "Physics" ? "text-purple-600" : "text-green-600"}`}>{subj}</span>
-                                                    <div className="flex-1 flex items-center gap-1.5 min-w-0">
-                                                      {assignedUser && !isEditing ? (
-                                                        <>
-                                                          <div className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 text-[8px] font-bold">
-                                                            {assignedUser.full_name.slice(0, 2).toUpperCase()}
-                                                          </div>
-                                                          <span className="text-[11px] truncate">{assignedUser.full_name}</span>
-                                                          <button onClick={toggleEdit} className="ml-auto text-muted-foreground hover:text-primary opacity-0 group-hover:opacity-100 shrink-0"><Pencil className="h-2.5 w-2.5" /></button>
-                                                          <button onClick={() => fm && setPendingAction({ fn: () => removeFaculty.mutate(fm.id), title: "Remove Faculty", description: `Remove ${assignedUser.full_name} from ${subj}?` })} className="text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100 shrink-0"><X className="h-2.5 w-2.5" /></button>
-                                                        </>
-                                                      ) : (
-                                                        <div className="flex items-center gap-1 flex-1 min-w-0">
-                                                          <Select onValueChange={v => { assignFaculty.mutate({ userId: +v, bsId: bs.id, subject: subj }); setEditingFaculty(prev => { const next = new Set(prev); next.delete(editKey); return next; }); }}>
-                                                            <SelectTrigger className="h-5 w-40 text-[11px] border-dashed text-muted-foreground">
-                                                              <SelectValue placeholder={isEditing ? "Re-assign…" : "Assign…"} />
-                                                            </SelectTrigger>
-                                                            <SelectContent>
-                                                              {faculty.length === 0
-                                                                ? <div className="px-3 py-2 text-xs text-muted-foreground">No faculty found</div>
-                                                                : faculty.map(u => <SelectItem key={u.id} value={String(u.id)}>{u.full_name}</SelectItem>)}
-                                                            </SelectContent>
-                                                          </Select>
-                                                          {isEditing && <button onClick={toggleEdit} className="text-muted-foreground hover:text-foreground shrink-0"><X className="h-2.5 w-2.5" /></button>}
-                                                        </div>
-                                                      )}
+                                                  <div key={subj} className="flex items-center gap-1.5 px-2.5 py-2 flex-wrap">
+                                                    {/* Subject label + status dot */}
+                                                    <div className="flex items-center gap-1.5 shrink-0">
+                                                      <div className={`h-2 w-2 rounded-full shrink-0 ${hasAny ? "bg-emerald-400" : "bg-amber-300"}`} />
+                                                      <span className={`text-xs font-semibold ${subjColor}`}>{subjShort}</span>
                                                     </div>
-                                                    <div className={`h-1.5 w-1.5 rounded-full shrink-0 ${assignedUser ? "bg-emerald-400" : "bg-amber-300"}`} />
+                                                    {/* Faculty chips */}
+                                                    <div className="flex flex-wrap items-center gap-1 flex-1 min-w-0">
+                                                      {subjFms.map(fm => {
+                                                        const u = userById.get(fm.user_id);
+                                                        return (
+                                                          <span key={fm.id} className={`group/chip inline-flex items-center gap-1 rounded-full border text-xs font-medium px-2 py-0.5 ${chipCls}`}>
+                                                            <span className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[9px] font-bold ${avatarCls}`}>
+                                                              {(u?.full_name ?? "?").slice(0, 2).toUpperCase()}
+                                                            </span>
+                                                            <span className="max-w-[80px] truncate">{u?.full_name ?? `#${fm.user_id}`}</span>
+                                                            <button
+                                                              onClick={() => setPendingAction({ fn: () => removeFaculty.mutate(fm.id), title: "Remove Faculty", description: `Remove ${u?.full_name ?? "this faculty"} from ${subj}?` })}
+                                                              className="opacity-0 group-hover/chip:opacity-100 hover:text-red-500 transition-opacity shrink-0"
+                                                            >
+                                                              <X className="h-3 w-3" />
+                                                            </button>
+                                                          </span>
+                                                        );
+                                                      })}
+                                                      {/* + Add dropdown */}
+                                                      <Select onValueChange={v => assignFaculty.mutate({ userId: +v, bsId: bs.id, subject: subj })}>
+                                                        <SelectTrigger className="h-6 w-auto px-2 text-xs border-dashed text-muted-foreground gap-0.5 [&>svg]:hidden">
+                                                          <span className="text-primary/60 font-semibold">+ Add</span>
+                                                        </SelectTrigger>
+                                                        <SelectContent>
+                                                          {available.length === 0
+                                                            ? <div className="px-3 py-2 text-xs text-muted-foreground">All faculty assigned</div>
+                                                            : available.map(u => <SelectItem key={u.id} value={String(u.id)}>{u.full_name}</SelectItem>)}
+                                                        </SelectContent>
+                                                      </Select>
+                                                    </div>
                                                   </div>
                                                 );
                                               })}

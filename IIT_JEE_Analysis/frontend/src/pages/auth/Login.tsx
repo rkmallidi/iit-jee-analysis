@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { Eye, EyeOff, GraduationCap, Loader2 } from "lucide-react";
+import { Eye, EyeOff, Loader2 } from "lucide-react";
 
 import { login, me, meContext } from "@/lib/api";
 import { useAuthStore } from "@/store/auth";
@@ -37,7 +37,6 @@ export default function LoginPage() {
       const [{ data: user }, { data: ctx }] = await Promise.all([me(), meContext()]);
       setUser(user);
       setContext(ctx.branch_ids);
-      // Apply saved theme
       if (user.theme_prefs) {
         const { setMode, setPrimaryColor, setRadius } = useThemeStore.getState();
         if (user.theme_prefs.theme) setMode(user.theme_prefs.theme as "light" | "dark" | "system");
@@ -45,7 +44,6 @@ export default function LoginPage() {
         if (user.theme_prefs.radius) setRadius(user.theme_prefs.radius as string);
       }
       applyTheme();
-      // Operators land directly on the OMR upload page
       const isOperator = user.roles.some(r => r.name === "Operator") &&
         !user.roles.some(r => ["Admin", "Dean", "Principal", "Vice-Principal"].includes(r.name));
       navigate(isOperator ? "/results" : "/");
@@ -57,14 +55,15 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background via-secondary/20 to-primary/10 p-4">
       <div className="w-full max-w-md space-y-6">
+
         {/* Logo / Brand */}
         <div className="flex flex-col items-center gap-3">
-          <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-primary shadow-lg">
-            <GraduationCap className="h-9 w-9 text-primary-foreground" />
+          <div className="h-20 w-20 rounded-2xl overflow-hidden shadow-lg ring-1 ring-border/50">
+            <img src="/sc-logo.png.jpeg" alt="Sri Chaitanya" className="h-full w-full object-cover" />
           </div>
           <div className="text-center">
-            <h1 className="text-2xl font-bold tracking-tight">IIT JEE Analysis</h1>
-            <p className="text-sm text-muted-foreground mt-1">Academic Management Platform</p>
+            <h1 className="text-2xl font-bold tracking-tight">Sri Chaitanya</h1>
+            <p className="text-sm text-muted-foreground mt-0.5">Kavuri Hills — IIT JEE Analysis Platform</p>
           </div>
         </div>
 
@@ -104,9 +103,9 @@ export default function LoginPage() {
                   />
                   <button
                     type="button"
-                    onClick={() => setShowPwd((v) => !v)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                    onClick={() => setShowPwd(v => !v)}
                     tabIndex={-1}
+                    className="border-0 absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
                   >
                     {showPwd ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                   </button>
@@ -122,9 +121,7 @@ export default function LoginPage() {
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                     Signing in…
                   </>
-                ) : (
-                  "Sign In"
-                )}
+                ) : "Sign In"}
               </Button>
             </form>
           </CardContent>

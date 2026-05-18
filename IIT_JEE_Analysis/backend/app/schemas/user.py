@@ -26,6 +26,7 @@ class UserBase(BaseModel):
     full_name: str
     phone: Optional[str] = None
     whatsapp: Optional[str] = None
+    avatar_url: Optional[str] = None
     is_active: bool = True
 
 
@@ -46,6 +47,8 @@ class UserUpdate(BaseModel):
     full_name: Optional[str] = None
     phone: Optional[str] = None
     whatsapp: Optional[str] = None
+    avatar_url: Optional[str] = None
+    clear_avatar: bool = False  # set True to explicitly remove the photo
     is_active: Optional[bool] = None
     password: Optional[str] = None
     role_ids: Optional[list[int]] = None

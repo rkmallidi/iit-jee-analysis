@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from typing import Optional, TYPE_CHECKING
 
 from sqlalchemy import (
-    Boolean, DateTime, Float, ForeignKey, Integer, String,
+    Boolean, DateTime, Float, ForeignKey, Integer, JSON, String,
     UniqueConstraint,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -102,12 +102,13 @@ class StudentEvaluation(Base):
     above_mi_chemistry: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)
 
     # ── Faculty snapshot (at evaluation time, per student's section) ─────────────
-    math_faculty_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
-    math_faculty_name: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
-    physics_faculty_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
-    physics_faculty_name: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
-    chemistry_faculty_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
-    chemistry_faculty_name: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
+    # JSON arrays — multiple faculty can co-teach the same subject
+    math_faculty_ids: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
+    math_faculty_names: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
+    physics_faculty_ids: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
+    physics_faculty_names: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
+    chemistry_faculty_ids: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
+    chemistry_faculty_names: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
 
     # ── Leadership snapshot (branch-level at evaluation time) ────────────────────
     principal_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
@@ -205,12 +206,13 @@ class StudentCumulativeEvaluation(Base):
     above_mi_chemistry: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)
 
     # ── Faculty + leadership snapshot ────────────────────────────────────────────
-    math_faculty_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
-    math_faculty_name: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
-    physics_faculty_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
-    physics_faculty_name: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
-    chemistry_faculty_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
-    chemistry_faculty_name: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
+    # JSON arrays — multiple faculty can co-teach the same subject
+    math_faculty_ids: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
+    math_faculty_names: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
+    physics_faculty_ids: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
+    physics_faculty_names: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
+    chemistry_faculty_ids: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
+    chemistry_faculty_names: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
     principal_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     principal_name: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
     dean_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)

@@ -154,30 +154,58 @@ function BranchUploadPanel({ paper: _paper, branch, log, onUpload, onClear, onSh
             </div>
 
             {/* Stats row */}
-            <div className="flex items-center gap-4 ml-6">
+            <div className="flex items-center gap-4 ml-6 flex-wrap">
               <div className="flex items-center gap-1.5 text-[12px] font-semibold text-emerald-700">
                 <CheckCircle2 className="h-3.5 w-3.5" />
-                {log.valid_count} uploaded
+                {log.valid_count} Uploaded
               </div>
-              {log.absent_count > 0 && (
-                <div className="flex items-center gap-1.5 text-[12px] font-semibold text-amber-600">
-                  <AlertTriangle className="h-3.5 w-3.5" />
-                  {log.absent_count} absent
-                </div>
-              )}
-              {log.duplicate_count > 0 && (
-                <div className="flex items-center gap-1.5 text-[12px] font-semibold text-red-600">
-                  <XCircle className="h-3.5 w-3.5" />
-                  {log.duplicate_count} duplicate
-                </div>
-              )}
-              {log.invalid_count > 0 && (
-                <div className="flex items-center gap-1.5 text-[12px] font-semibold text-red-600">
-                  <XCircle className="h-3.5 w-3.5" />
-                  {log.invalid_count} invalid
-                </div>
-              )}
+              <div className="flex items-center gap-1.5 text-[12px] font-semibold text-amber-600">
+                <AlertTriangle className="h-3.5 w-3.5" />
+                {log.absent_count} Absent
+              </div>
+              <div className="flex items-center gap-1.5 text-[12px] font-semibold text-red-600">
+                <XCircle className="h-3.5 w-3.5" />
+                {log.duplicate_count} Duplicate
+              </div>
+              <div className="flex items-center gap-1.5 text-[12px] font-semibold text-orange-500">
+                <AlertTriangle className="h-3.5 w-3.5" />
+                {log.invalid_count} Invalid
+              </div>
             </div>
+
+            {/* Progress bar */}
+            {(() => {
+              const total = log.valid_count + log.absent_count + log.duplicate_count + log.invalid_count;
+              if (total === 0) return null;
+              const validPct   = (log.valid_count     / total) * 100;
+              const absentPct  = (log.absent_count    / total) * 100;
+              const dupPct     = (log.duplicate_count / total) * 100;
+              const invalidPct = (log.invalid_count   / total) * 100;
+              return (
+                <div className="ml-6 space-y-1">
+                  <div className="flex h-2 w-full rounded-full overflow-hidden bg-slate-200">
+                    <div className="bg-emerald-500 transition-all" style={{ width: `${validPct}%` }} title={`${log.valid_count} uploaded`} />
+                    <div className="bg-amber-400 transition-all"  style={{ width: `${absentPct}%` }}  title={`${log.absent_count} absent`} />
+                    <div className="bg-red-500 transition-all"    style={{ width: `${dupPct}%` }}     title={`${log.duplicate_count} duplicate`} />
+                    <div className="bg-orange-400 transition-all" style={{ width: `${invalidPct}%` }} title={`${log.invalid_count} invalid`} />
+                  </div>
+                  {/* Legend */}
+                  <div className="flex items-center gap-3 flex-wrap">
+                    {[
+                      { color: "bg-emerald-500", label: "Uploaded" },
+                      { color: "bg-amber-400",   label: "Absent" },
+                      { color: "bg-red-500",     label: "Duplicate" },
+                      { color: "bg-orange-400",  label: "Invalid" },
+                    ].map(({ color, label }) => (
+                      <span key={label} className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                        <span className={`inline-block h-2 w-2 rounded-sm ${color}`} />
+                        {label}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
 
             {/* Absent list */}
             {log.absent_list.length > 0 && (

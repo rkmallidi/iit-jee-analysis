@@ -73,7 +73,7 @@ function BranchDialog({ open, onClose, editItem }: { open: boolean; onClose: () 
           </div>
           <div className="flex items-center justify-between rounded-lg border p-3">
             <div>
-              <p className="font-medium text-sm">Active</p>
+              <p className="font-medium text-sm">Branch Active</p>
               <p className="text-xs text-muted-foreground">Inactive branches won't appear in mappings</p>
             </div>
             <Switch checked={watch("is_active")} onCheckedChange={(v) => setValue("is_active", v)} />
@@ -126,7 +126,8 @@ export default function BranchesPage() {
           key: "is_active",
           label: "Status",
           render: (b) => (
-            <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${b.is_active ? "bg-emerald-100 text-emerald-700" : "bg-muted text-muted-foreground"}`}>
+            <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+              <span className={`h-2 w-2 rounded-full flex-shrink-0 ${b.is_active ? "bg-emerald-500" : "bg-zinc-400"}`} />
               {b.is_active ? "Active" : "Inactive"}
             </span>
           ),

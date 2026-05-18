@@ -264,14 +264,15 @@ def exam_performance(db: DbSession, exam_id: int):
         })
 
     # Faculty performance (avg score per faculty per subject)
+    # Each subject now stores parallel lists of ids/names (multiple co-teachers).
     faculty_perf: dict[tuple, list] = {}
     for r in rows:
-        for fid, fname, subj, score in [
-            (r.math_faculty_id,     r.math_faculty_name,     "Mathematics", r.math_score),
-            (r.physics_faculty_id,  r.physics_faculty_name,  "Physics",     r.physics_score),
-            (r.chemistry_faculty_id, r.chemistry_faculty_name, "Chemistry",  r.chemistry_score),
+        for ids, names, subj, score in [
+            (r.math_faculty_ids or [],     r.math_faculty_names or [],     "Mathematics", r.math_score),
+            (r.physics_faculty_ids or [],  r.physics_faculty_names or [],  "Physics",     r.physics_score),
+            (r.chemistry_faculty_ids or [], r.chemistry_faculty_names or [], "Chemistry",  r.chemistry_score),
         ]:
-            if fid:
+            for fid, fname in zip(ids, names):
                 key = (fid, fname or f"Faculty {fid}", subj)
                 faculty_perf.setdefault(key, []).append(score)
 
@@ -430,9 +431,9 @@ def student_report(
             "math_attempted": e.math_attempted, "math_correct": e.math_correct, "math_wrong": e.math_wrong,
             "physics_attempted": e.physics_attempted, "physics_correct": e.physics_correct, "physics_wrong": e.physics_wrong,
             "chemistry_attempted": e.chemistry_attempted, "chemistry_correct": e.chemistry_correct, "chemistry_wrong": e.chemistry_wrong,
-            "math_faculty_name":     e.math_faculty_name,
-            "physics_faculty_name":  e.physics_faculty_name,
-            "chemistry_faculty_name": e.chemistry_faculty_name,
+            "math_faculty_names":     e.math_faculty_names or [],
+            "physics_faculty_names":  e.physics_faculty_names or [],
+            "chemistry_faculty_names": e.chemistry_faculty_names or [],
             "branch_name":    None,  # resolved below
         })
 

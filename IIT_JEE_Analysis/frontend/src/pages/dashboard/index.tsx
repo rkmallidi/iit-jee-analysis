@@ -2,43 +2,51 @@ import { useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import {
-  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell,
-  PieChart, Pie, Legend,
+  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, LabelList,
+  PieChart, Pie,
 } from "recharts";
 import {
-  LayoutDashboard, FlaskConical, Upload, CheckCircle2, Clock,
+  FlaskConical, Upload, CheckCircle2, Clock,
   FileText, TrendingUp, School, AlertTriangle, ArrowRight,
+  CalendarCheck, BarChart2, UserCircle2, Scan,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { getCommandCenter, getAcademicYears } from "@/lib/api";
 import { useAcademicYearStore } from "@/store/academicYear";
 import { cn } from "@/lib/utils";
 
-const STATUS_COLOR: Record<string, string> = {
-  draft:     "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300",
-  published: "bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300",
-  completed: "bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300",
-};
-
 const PIPELINE_COLORS = ["#94a3b8", "#f59e0b", "#3b82f6", "#8b5cf6"];
 
-function KpiCard({ label, value, icon: Icon, color, sub }: {
-  label: string; value: number | string; icon: React.ElementType;
-  color: string; sub?: string;
+// ── KPI Card ──────────────────────────────────────────────────────────────────
+function KpiCard({ label, value, icon: Icon, color, iconColor, sub, progress }: {
+  label: string;
+  value: number | string;
+  icon: React.ElementType;
+  color: string;
+  iconColor: string;
+  sub?: string;
+  progress?: number; // 0–100
 }) {
   return (
     <Card className="overflow-hidden">
       <CardContent className="p-5">
         <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">{label}</p>
-            <p className="text-3xl font-bold mt-1 tabular-nums">{value}</p>
-            {sub && <p className="text-xs text-muted-foreground mt-0.5">{sub}</p>}
+          <div className="min-w-0 flex-1">
+            <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">{label}</p>
+            <p className="text-3xl font-bold mt-1.5 tabular-nums tracking-tight">{value}</p>
+            {sub && <p className="text-xs text-muted-foreground mt-1">{sub}</p>}
+            {progress !== undefined && (
+              <div className="mt-2.5 h-1 w-full rounded-full bg-muted overflow-hidden">
+                <div
+                  className={cn("h-full rounded-full transition-all", iconColor.replace("text-", "bg-"))}
+                  style={{ width: `${Math.min(progress, 100)}%` }}
+                />
+              </div>
+            )}
           </div>
           <div className={cn("flex h-11 w-11 shrink-0 items-center justify-center rounded-xl", color)}>
-            <Icon className="h-5 w-5" />
+            <Icon className={cn("h-5 w-5", iconColor)} />
           </div>
         </div>
       </CardContent>
@@ -46,6 +54,53 @@ function KpiCard({ label, value, icon: Icon, color, sub }: {
   );
 }
 
+// ── Completion Ring ───────────────────────────────────────────────────────────
+function CompletionRing({ evaluated, total }: { evaluated: number; total: number }) {
+  const pct = total > 0 ? Math.round((evaluated / total) * 100) : 0;
+  const data = [
+    { value: pct,       fill: "#8b5cf6" },
+    { value: 100 - pct, fill: "hsl(var(--muted))" },
+  ];
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm font-semibold">Evaluation Rate</CardTitle>
+      </CardHeader>
+      <CardContent className="flex flex-col items-center justify-center h-52 gap-2">
+        <div className="relative">
+          <ResponsiveContainer width={160} height={160}>
+            <PieChart>
+              <Pie
+                data={data}
+                dataKey="value"
+                cx="50%"
+                cy="50%"
+                innerRadius={52}
+                outerRadius={72}
+                startAngle={90}
+                endAngle={-270}
+                strokeWidth={0}
+              >
+                {data.map((entry, i) => (
+                  <Cell key={i} fill={entry.fill} />
+                ))}
+              </Pie>
+            </PieChart>
+          </ResponsiveContainer>
+          <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+            <span className="text-3xl font-bold tabular-nums">{pct}%</span>
+            <span className="text-[11px] text-muted-foreground">evaluated</span>
+          </div>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          {evaluated} of {total} exams
+        </p>
+      </CardContent>
+    </Card>
+  );
+}
+
+// ── Main ─────────────────────────────────────────────────────────────────────
 export default function DashboardPage() {
   const { selectedYear, setSelectedYear } = useAcademicYearStore();
   const yearId = selectedYear?.id;
@@ -70,27 +125,51 @@ export default function DashboardPage() {
 
   const pipeline = cc?.pipeline;
   const pipelineChart = pipeline ? [
-    { name: "Draft",     value: pipeline.draft,     fill: PIPELINE_COLORS[0] },
-    { name: "Published", value: pipeline.published,  fill: PIPELINE_COLORS[1] },
-    { name: "Completed", value: pipeline.completed,  fill: PIPELINE_COLORS[2] },
-    { name: "Evaluated", value: pipeline.evaluated,  fill: PIPELINE_COLORS[3] },
+    { name: "Draft",     value: pipeline.draft,      fill: PIPELINE_COLORS[0] },
+    { name: "Published", value: pipeline.published,   fill: PIPELINE_COLORS[1] },
+    { name: "Completed", value: pipeline.completed,   fill: PIPELINE_COLORS[2] },
+    { name: "Evaluated", value: pipeline.evaluated,   fill: PIPELINE_COLORS[3] },
   ] : [];
 
-  const pendingBranches = (cc?.branch_uploads ?? []).filter(b => !b.uploaded);
+  const totalExams   = pipeline?.total_logical ?? 0;
+  const evaluated    = pipeline?.evaluated ?? 0;
+  const resultsUploaded    = cc?.totals.results_uploaded ?? 0;
+  const studentsEvaluated  = cc?.totals.students_evaluated ?? 0;
+  const evalProgress = totalExams > 0 ? Math.round((evaluated / totalExams) * 100) : 0;
+  const uploadProgress = totalExams > 0 ? Math.round((resultsUploaded / Math.max(totalExams, 1)) * 100) : 0;
+
+  const pendingBranches  = (cc?.branch_uploads ?? []).filter(b => !b.uploaded);
   const uploadedBranches = (cc?.branch_uploads ?? []).filter(b => b.uploaded);
+
+  const quickLinks = [
+    { label: "Exams",          to: "/exams",          icon: CalendarCheck, color: "bg-blue-500",    desc: "Create & publish" },
+    { label: "Upload OMR",     to: "/results",        icon: Upload,        color: "bg-emerald-500", desc: "Upload scan results" },
+    { label: "Branch Results", to: "/branch-results", icon: BarChart2,     color: "bg-violet-500",  desc: "Compare branches" },
+    { label: "Analytics",      to: "/analytics",      icon: TrendingUp,    color: "bg-amber-500",   desc: "Performance insights" },
+    { label: "Student Report", to: "/student-report", icon: UserCircle2,   color: "bg-rose-500",    desc: "Individual report card" },
+    { label: "OMR Results",    to: "/results",        icon: Scan,          color: "bg-cyan-500",    desc: "View uploaded results" },
+  ];
 
   return (
     <div className="space-y-6">
-      {/* Header */}
+
+      {/* ── Header ── */}
       <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div className="flex items-center gap-2.5">
-          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10">
-            <LayoutDashboard className="h-5 w-5 text-primary" />
+        <div>
+          <div className="flex items-center gap-2 mb-0.5">
+            {selectedYear && (
+              <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-primary/10 text-primary">
+                {selectedYear.name}
+              </span>
+            )}
+            {selectedYear?.is_current && (
+              <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">
+                Current Year
+              </span>
+            )}
           </div>
-          <div>
-            <h1 className="text-xl font-bold leading-tight">Command Center</h1>
-            <p className="text-xs text-muted-foreground">Year-wide exam health at a glance</p>
-          </div>
+          <h1 className="text-xl font-bold leading-tight">Command Center</h1>
+          <p className="text-xs text-muted-foreground mt-0.5">Year-wide exam health at a glance</p>
         </div>
         <Select
           value={selectedYear ? String(selectedYear.id) : ""}
@@ -112,41 +191,47 @@ export default function DashboardPage() {
         </Select>
       </div>
 
-      {/* KPI strip */}
+      {/* ── KPI strip ── */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <KpiCard
           label="Total Exams"
-          value={isLoading ? "…" : (pipeline?.total_logical ?? 0)}
+          value={isLoading ? "…" : totalExams}
           icon={FileText}
-          color="bg-blue-100 text-blue-600 dark:bg-blue-900/40 dark:text-blue-400"
+          color="bg-blue-100 dark:bg-blue-900/40"
+          iconColor="text-blue-600 dark:text-blue-400"
           sub="logical exam papers"
         />
         <KpiCard
           label="Evaluated"
-          value={isLoading ? "…" : (pipeline?.evaluated ?? 0)}
+          value={isLoading ? "…" : evaluated}
           icon={FlaskConical}
-          color="bg-violet-100 text-violet-600 dark:bg-violet-900/40 dark:text-violet-400"
-          sub="with rank & MI data"
+          color="bg-violet-100 dark:bg-violet-900/40"
+          iconColor="text-violet-600 dark:text-violet-400"
+          sub={`${evalProgress}% of total exams`}
+          progress={evalProgress}
         />
         <KpiCard
-          label="OMR Results"
-          value={isLoading ? "…" : (cc?.totals.results_uploaded ?? 0)}
+          label="OMR Uploaded"
+          value={isLoading ? "…" : resultsUploaded}
           icon={Upload}
-          color="bg-emerald-100 text-emerald-600 dark:bg-emerald-900/40 dark:text-emerald-400"
-          sub="student sheets uploaded"
+          color="bg-emerald-100 dark:bg-emerald-900/40"
+          iconColor="text-emerald-600 dark:text-emerald-400"
+          sub="student answer sheets"
+          progress={uploadProgress}
         />
         <KpiCard
-          label="Students Evaluated"
-          value={isLoading ? "…" : (cc?.totals.students_evaluated ?? 0)}
+          label="Students Ranked"
+          value={isLoading ? "…" : studentsEvaluated}
           icon={TrendingUp}
-          color="bg-amber-100 text-amber-600 dark:bg-amber-900/40 dark:text-amber-400"
-          sub="ranked across all exams"
+          color="bg-amber-100 dark:bg-amber-900/40"
+          iconColor="text-amber-600 dark:text-amber-400"
+          sub="across all evaluated exams"
         />
       </div>
 
-      {/* Charts row */}
+      {/* ── Charts row ── */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        {/* Pipeline funnel bar chart */}
+        {/* Pipeline bar chart */}
         <Card className="lg:col-span-2">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-semibold">Exam Pipeline</CardTitle>
@@ -156,14 +241,16 @@ export default function DashboardPage() {
               <div className="flex h-full items-center justify-center text-muted-foreground text-sm">Loading…</div>
             ) : (
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={pipelineChart} margin={{ top: 5, right: 10, left: -20, bottom: 0 }}>
-                  <XAxis dataKey="name" tick={{ fontSize: 12 }} />
-                  <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
+                <BarChart data={pipelineChart} margin={{ top: 18, right: 10, left: -20, bottom: 0 }}>
+                  <XAxis dataKey="name" tick={{ fontSize: 12 }} axisLine={false} tickLine={false} />
+                  <YAxis tick={{ fontSize: 11 }} allowDecimals={false} axisLine={false} tickLine={false} />
                   <Tooltip
-                    contentStyle={{ fontSize: 12, borderRadius: 8 }}
+                    contentStyle={{ fontSize: 12, borderRadius: 8, border: "none", boxShadow: "0 4px 16px rgba(0,0,0,0.1)" }}
+                    cursor={{ fill: "hsl(var(--muted)/0.4)" }}
                     formatter={(v) => [v, "Exams"]}
                   />
-                  <Bar dataKey="value" radius={[6, 6, 0, 0]}>
+                  <Bar dataKey="value" radius={[6, 6, 0, 0]} maxBarSize={56}>
+                    <LabelList dataKey="value" position="top" style={{ fontSize: 12, fontWeight: 600, fill: "hsl(var(--foreground))" }} />
                     {pipelineChart.map((entry, i) => (
                       <Cell key={i} fill={entry.fill} />
                     ))}
@@ -174,43 +261,25 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
 
-        {/* Pipeline pie */}
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-semibold">Status Split</CardTitle>
-          </CardHeader>
-          <CardContent className="h-52">
-            {isLoading || !pipeline ? (
-              <div className="flex h-full items-center justify-center text-muted-foreground text-sm">Loading…</div>
-            ) : (
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={pipelineChart.filter(d => d.value > 0)}
-                    dataKey="value"
-                    nameKey="name"
-                    cx="50%"
-                    cy="50%"
-                    outerRadius={65}
-                    label={({ name, value }) => `${name}: ${value}`}
-                    labelLine={false}
-                    fontSize={11}
-                  >
-                    {pipelineChart.map((entry, i) => (
-                      <Cell key={i} fill={entry.fill} />
-                    ))}
-                  </Pie>
-                  <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }} />
-                </PieChart>
-              </ResponsiveContainer>
-            )}
-          </CardContent>
-        </Card>
+        {/* Completion ring */}
+        {!isLoading && (
+          <CompletionRing evaluated={evaluated} total={totalExams} />
+        )}
+        {isLoading && (
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-semibold">Evaluation Rate</CardTitle>
+            </CardHeader>
+            <CardContent className="flex h-52 items-center justify-center text-muted-foreground text-sm">
+              Loading…
+            </CardContent>
+          </Card>
+        )}
       </div>
 
-      {/* Recent exams + Branch uploads */}
+      {/* ── Recent exams + Branch uploads ── */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        {/* Recent exams table */}
+        {/* Recent exams */}
         <Card className="lg:col-span-2">
           <CardHeader className="pb-2 flex flex-row items-center justify-between">
             <CardTitle className="text-sm font-semibold">Recent Exams</CardTitle>
@@ -221,16 +290,21 @@ export default function DashboardPage() {
           <CardContent className="p-0">
             {isLoading ? (
               <div className="p-6 text-center text-sm text-muted-foreground">Loading…</div>
+            ) : (cc?.recent_exams ?? []).length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-10 gap-2 text-muted-foreground">
+                <FileText className="h-8 w-8 opacity-30" />
+                <p className="text-sm">No exams yet for this year</p>
+              </div>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
-                    <tr className="border-b text-xs text-muted-foreground">
-                      <th className="px-4 py-2 text-left font-medium">Exam</th>
-                      <th className="px-4 py-2 text-left font-medium">Date</th>
-                      <th className="px-4 py-2 text-center font-medium">Results</th>
-                      <th className="px-4 py-2 text-center font-medium">Status</th>
-                      <th className="px-4 py-2 text-center font-medium">Eval</th>
+                    <tr className="border-b text-xs text-muted-foreground bg-muted/30">
+                      <th className="px-4 py-2.5 text-left font-medium">Exam</th>
+                      <th className="px-4 py-2.5 text-left font-medium">Date</th>
+                      <th className="px-4 py-2.5 text-center font-medium">Results</th>
+                      <th className="px-4 py-2.5 text-center font-medium">Status</th>
+                      <th className="px-4 py-2.5 text-center font-medium">Evaluated</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -238,25 +312,37 @@ export default function DashboardPage() {
                       <tr key={e.id} className="border-b last:border-0 hover:bg-muted/40 transition-colors">
                         <td className="px-4 py-2.5 font-medium">
                           {e.exam_code}
-                          <span className="ml-1.5 text-xs text-muted-foreground">{e.exam_type} {e.paper}</span>
+                          <span className="ml-1.5 text-xs text-muted-foreground">{e.exam_type} · {e.paper}</span>
                         </td>
-                        <td className="px-4 py-2.5 text-muted-foreground text-xs">{e.exam_date}</td>
-                        <td className="px-4 py-2.5 text-center tabular-nums">{e.result_count}</td>
+                        <td className="px-4 py-2.5 text-muted-foreground text-xs tabular-nums">{e.exam_date}</td>
+                        <td className="px-4 py-2.5 text-center tabular-nums font-medium">{e.result_count}</td>
                         <td className="px-4 py-2.5 text-center">
-                          <span className={cn("inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium", STATUS_COLOR[e.status] ?? "")}>
+                          <span className={cn(
+                            "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium capitalize",
+                            e.status === "draft"      && "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300",
+                            e.status === "published"  && "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400",
+                            e.status === "completed"  && "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-400",
+                          )}>
+                            <span className={cn(
+                              "h-1.5 w-1.5 rounded-full",
+                              e.status === "draft"     && "bg-slate-400",
+                              e.status === "published" && "bg-amber-500",
+                              e.status === "completed" && "bg-blue-500",
+                            )} />
                             {e.status}
                           </span>
                         </td>
                         <td className="px-4 py-2.5 text-center">
-                          {e.evaluated
-                            ? <FlaskConical className="h-3.5 w-3.5 text-violet-500 mx-auto" />
-                            : <span className="text-muted-foreground/40 text-xs">—</span>}
+                          {e.evaluated ? (
+                            <span className="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-600 dark:text-emerald-400">
+                              <CheckCircle2 className="h-3.5 w-3.5" /> Yes
+                            </span>
+                          ) : (
+                            <span className="text-[11px] text-muted-foreground/50">—</span>
+                          )}
                         </td>
                       </tr>
                     ))}
-                    {!isLoading && (cc?.recent_exams ?? []).length === 0 && (
-                      <tr><td colSpan={5} className="px-4 py-6 text-center text-muted-foreground text-sm">No exams yet</td></tr>
-                    )}
                   </tbody>
                 </table>
               </div>
@@ -274,33 +360,48 @@ export default function DashboardPage() {
             {isLoading ? (
               <div className="text-center text-sm text-muted-foreground py-4">Loading…</div>
             ) : cc?.branch_uploads.length === 0 ? (
-              <div className="text-center text-sm text-muted-foreground py-4">
-                No published exams pending upload
+              <div className="flex flex-col items-center justify-center py-6 gap-2 text-muted-foreground">
+                <CheckCircle2 className="h-7 w-7 opacity-30" />
+                <p className="text-xs text-center">No published exams pending upload</p>
               </div>
             ) : (
-              <div className="space-y-1.5">
+              <div className="space-y-3">
+                {/* Summary bar */}
+                <div className="space-y-1">
+                  <div className="flex justify-between text-xs text-muted-foreground">
+                    <span>{uploadedBranches.length} uploaded</span>
+                    <span>{pendingBranches.length} pending</span>
+                  </div>
+                  <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
+                    <div
+                      className="h-full rounded-full bg-emerald-500 transition-all"
+                      style={{ width: `${cc.branch_uploads.length > 0 ? (uploadedBranches.length / cc.branch_uploads.length) * 100 : 0}%` }}
+                    />
+                  </div>
+                </div>
+
                 {pendingBranches.length > 0 && (
-                  <div className="mb-2">
-                    <p className="text-xs font-semibold text-amber-600 flex items-center gap-1 mb-1.5">
-                      <AlertTriangle className="h-3.5 w-3.5" /> Pending ({pendingBranches.length})
+                  <div>
+                    <p className="text-[11px] font-semibold text-amber-600 flex items-center gap-1 mb-1.5">
+                      <AlertTriangle className="h-3 w-3" /> Pending ({pendingBranches.length})
                     </p>
                     {pendingBranches.map(b => (
-                      <div key={b.branch_id} className="flex items-center justify-between py-1 px-2 rounded-md bg-amber-50 dark:bg-amber-950/30 mb-1">
+                      <div key={b.branch_id} className="flex items-center justify-between py-1.5 px-2.5 rounded-md bg-amber-50 dark:bg-amber-950/30 mb-1">
                         <span className="text-xs font-medium">{b.branch_name}</span>
-                        <Clock className="h-3.5 w-3.5 text-amber-500" />
+                        <Clock className="h-3.5 w-3.5 text-amber-500 shrink-0" />
                       </div>
                     ))}
                   </div>
                 )}
                 {uploadedBranches.length > 0 && (
                   <div>
-                    <p className="text-xs font-semibold text-emerald-600 flex items-center gap-1 mb-1.5">
-                      <CheckCircle2 className="h-3.5 w-3.5" /> Uploaded ({uploadedBranches.length})
+                    <p className="text-[11px] font-semibold text-emerald-600 flex items-center gap-1 mb-1.5">
+                      <CheckCircle2 className="h-3 w-3" /> Uploaded ({uploadedBranches.length})
                     </p>
                     {uploadedBranches.map(b => (
-                      <div key={b.branch_id} className="flex items-center justify-between py-1 px-2 rounded-md bg-emerald-50 dark:bg-emerald-950/30 mb-1">
+                      <div key={b.branch_id} className="flex items-center justify-between py-1.5 px-2.5 rounded-md bg-emerald-50 dark:bg-emerald-950/30 mb-1">
                         <span className="text-xs font-medium">{b.branch_name}</span>
-                        <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
+                        <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
                       </div>
                     ))}
                   </div>
@@ -311,29 +412,25 @@ export default function DashboardPage() {
         </Card>
       </div>
 
-      {/* Quick links */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        {[
-          { label: "Manage Exams",    to: "/exams",          color: "bg-blue-500",   desc: "Create & publish" },
-          { label: "Upload OMR",      to: "/results",        color: "bg-emerald-500", desc: "Upload scan results" },
-          { label: "Branch Results",  to: "/branch-results", color: "bg-violet-500",  desc: "Compare branches" },
-          { label: "Analytics",       to: "/analytics",      color: "bg-amber-500",   desc: "Performance insights" },
-        ].map(({ label, to, color, desc }) => (
-          <Link key={to} to={to}>
-            <Card className="hover:shadow-md transition-shadow cursor-pointer group">
-              <CardContent className="p-4 flex items-center gap-3">
-                <div className={cn("h-9 w-9 rounded-lg flex items-center justify-center shrink-0", color)}>
-                  <ArrowRight className="h-4 w-4 text-white group-hover:translate-x-0.5 transition-transform" />
+      {/* ── Quick links ── */}
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+        {quickLinks.map(({ label, to, icon: Icon, color, desc }) => (
+          <Link key={label} to={to}>
+            <Card className="hover:shadow-md hover:-translate-y-0.5 transition-all cursor-pointer group h-full">
+              <CardContent className="p-4 flex flex-col items-center text-center gap-2.5">
+                <div className={cn("h-10 w-10 rounded-xl flex items-center justify-center shrink-0 shadow-sm", color)}>
+                  <Icon className="h-5 w-5 text-white" />
                 </div>
                 <div>
-                  <p className="text-sm font-semibold">{label}</p>
-                  <p className="text-xs text-muted-foreground">{desc}</p>
+                  <p className="text-xs font-semibold leading-tight">{label}</p>
+                  <p className="text-[10px] text-muted-foreground mt-0.5 leading-tight">{desc}</p>
                 </div>
               </CardContent>
             </Card>
           </Link>
         ))}
       </div>
+
     </div>
   );
 }

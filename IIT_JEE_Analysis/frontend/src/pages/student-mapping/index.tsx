@@ -1,6 +1,7 @@
 import { useRef, useState, useEffect } from "react";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { useAcademicYearStore } from "@/store/academicYear";
+import * as XLSX from "xlsx";
 import {
   Download, FileSpreadsheet, Loader2, AlertCircle, CheckCircle2,
   ChevronRight, Search, X, Edit, Save, Plus, Star,
@@ -265,7 +266,7 @@ function EditStudentModal({ student, onClose, onSave }: { student: Student; onCl
               className="w-4 h-4 rounded"
             />
             <label htmlFor="is_active" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
-              Active
+              Student Active
             </label>
           </div>
         </div>
@@ -667,6 +668,33 @@ export default function StudentMappingPage() {
     }
   };
 
+  const handleExportExcel = () => {
+    const rows = filtered.map(s => {
+      const bs = s.section_mapping?.branch_section;
+      return {
+        "Admission No": s.admission_no,
+        "Name":         s.name,
+        "Phone":        s.phone ?? "",
+        "Target Rank":  s.target_rank ?? "",
+        "Branch":       bs?.branch?.name ?? "",
+        "Program":      bs?.program?.name ?? "",
+        "Class":        bs?.class_?.name ?? "",
+        "Section":      bs?.section?.name ?? "",
+        "Status":       s.is_active ? "Active" : "Inactive",
+      };
+    });
+    const ws = XLSX.utils.json_to_sheet(rows);
+    ws["!cols"] = [
+      { wch: 16 }, { wch: 30 }, { wch: 16 }, { wch: 14 },
+      { wch: 16 }, { wch: 14 }, { wch: 12 }, { wch: 10 }, { wch: 10 },
+    ];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Student Mapping");
+    const year = selectedYear?.name.replace(/\s+/g, "_") ?? "export";
+    XLSX.writeFile(wb, `student_mapping_${year}_${new Date().toISOString().slice(0, 10)}.xlsx`);
+    toast({ title: "Exported", description: `${rows.length} students exported to Excel.` });
+  };
+
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -689,13 +717,13 @@ export default function StudentMappingPage() {
   };
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-start justify-between gap-3 flex-wrap">
+    <div className="space-y-4">
+      {/* ── Row 1: Title + Year selector ── */}
+      <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
           <h2 className="text-xl font-bold">Student Section Mapping</h2>
           <p className="text-sm text-muted-foreground">
-            Upload and manage student section assignments per academic year.
+            Manage student section assignments per academic year.
           </p>
         </div>
         <Select
@@ -705,7 +733,7 @@ export default function StudentMappingPage() {
             if (yr) setSelectedYear(yr);
           }}
         >
-          <SelectTrigger className="w-36 h-9">
+          <SelectTrigger className="w-40 h-9">
             <SelectValue placeholder="Select year" />
           </SelectTrigger>
           <SelectContent>
@@ -718,12 +746,18 @@ export default function StudentMappingPage() {
         </Select>
       </div>
 
-      {/* Toolbar */}
+      {/* ── Row 2: Actions left · Filters right ── */}
       <div className="flex items-center gap-2 flex-wrap">
         <input ref={fileRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleFileChange} />
-        <Button variant="outline" onClick={handleDownloadTemplate} disabled={downloading}>
-          {downloading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
-          Template
+
+        {/* Action buttons */}
+        <Button
+          onClick={() => setAddingStudent(true)}
+          disabled={!yearId}
+          title={!yearId ? "Select a year first" : undefined}
+        >
+          <Plus className="mr-2 h-4 w-4" />
+          Add Student
         </Button>
         <Button
           variant="outline"
@@ -734,17 +768,17 @@ export default function StudentMappingPage() {
           {uploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FileSpreadsheet className="mr-2 h-4 w-4" />}
           Upload Excel
         </Button>
-        <Button
-          onClick={() => setAddingStudent(true)}
-          disabled={!yearId}
-          title={!yearId ? "Select a year first" : undefined}
-        >
-          <Plus className="mr-2 h-4 w-4" />
-          Add Student
+        <Button variant="outline" onClick={handleExportExcel} disabled={filtered.length === 0}>
+          <Download className="mr-2 h-4 w-4 text-emerald-600" />
+          Export Excel
+        </Button>
+        <Button variant="ghost" size="sm" onClick={handleDownloadTemplate} disabled={downloading} className="text-muted-foreground">
+          {downloading ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Download className="mr-1.5 h-3.5 w-3.5" />}
+          Template
         </Button>
 
-        <div className="ml-auto flex items-center gap-2">
-          {/* Branch filter */}
+        {/* Filters pushed to the right */}
+        <div className="ml-auto flex items-center gap-2 flex-wrap">
           <Select value={filterBranchId} onValueChange={v => { setFilterBranchId(v); setFilterProgramId("__all__"); setFilterClassId("__all__"); }}>
             <SelectTrigger className="w-36 h-9">
               <SelectValue placeholder="All branches" />
@@ -757,7 +791,6 @@ export default function StudentMappingPage() {
             </SelectContent>
           </Select>
 
-          {/* Program filter */}
           <Select value={filterProgramId} onValueChange={v => { setFilterProgramId(v); setFilterClassId("__all__"); }} disabled={filterPrograms.length === 0}>
             <SelectTrigger className="w-36 h-9">
               <SelectValue placeholder="All programs" />
@@ -770,7 +803,6 @@ export default function StudentMappingPage() {
             </SelectContent>
           </Select>
 
-          {/* Class filter */}
           <Select value={filterClassId} onValueChange={setFilterClassId} disabled={filterClasses.length === 0}>
             <SelectTrigger className="w-32 h-9">
               <SelectValue placeholder="All classes" />
@@ -783,7 +815,6 @@ export default function StudentMappingPage() {
             </SelectContent>
           </Select>
 
-          {/* Search */}
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
@@ -801,7 +832,7 @@ export default function StudentMappingPage() {
         </div>
       </div>
 
-      {/* Summary */}
+      {/* ── Summary strip ── */}
       {yearId && !isLoading && (
         <p className="text-sm text-muted-foreground">
           {assigned.length} assigned · <span className="text-amber-600 font-medium">{unassigned.length} unassigned</span>
@@ -883,7 +914,8 @@ export default function StudentMappingPage() {
                             )}
                           </td>
                           <td className="px-4 py-3">
-                            <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${s.is_active ? "bg-emerald-100 text-emerald-700" : "bg-muted text-muted-foreground"}`}>
+                            <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+                              <span className={`h-2 w-2 rounded-full flex-shrink-0 ${s.is_active ? "bg-emerald-500" : "bg-zinc-400"}`} />
                               {s.is_active ? "Active" : "Inactive"}
                             </span>
                           </td>

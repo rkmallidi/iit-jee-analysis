@@ -290,16 +290,15 @@ def assign_faculty_section(
     bs = db.get(BranchSection, branch_section_id)
     if not bs:
         raise ValueError(f"BranchSection {branch_section_id} not found")
-    existing = db.scalar(
+    duplicate = db.scalar(
         select(FacultySection).where(
             FacultySection.branch_section_id == branch_section_id,
             FacultySection.subject == subject,
+            FacultySection.user_id == user_id,
         )
     )
-    if existing:
-        existing.user_id = user_id
-        db.commit()
-        return db.scalar(_faculty_section_query().where(FacultySection.id == existing.id))
+    if duplicate:
+        raise ValueError("This faculty is already assigned to this subject in this slot")
     obj = FacultySection(
         user_id=user_id,
         branch_section_id=branch_section_id,

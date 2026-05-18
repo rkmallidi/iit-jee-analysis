@@ -68,7 +68,7 @@ function ProgramDialog({ open, onClose, editItem }: { open: boolean; onClose: ()
             <Input {...register("description")} placeholder="Optional description" />
           </div>
           <div className="flex items-center justify-between rounded-lg border p-3">
-            <p className="font-medium text-sm">Active</p>
+            <p className="font-medium text-sm">Program Active</p>
             <Switch checked={watch("is_active")} onCheckedChange={(v) => setValue("is_active", v)} />
           </div>
           <DialogFooter>
@@ -109,7 +109,7 @@ export default function ProgramsPage() {
         { key: "name", label: "Program", render: (p) => <span className="font-semibold">{p.name}</span> },
         { key: "code", label: "Code", render: (p) => <code className="rounded bg-muted px-2 py-0.5 text-xs font-mono">{p.code}</code> },
         { key: "description", label: "Description", render: (p) => <span className="text-muted-foreground">{p.description || "—"}</span> },
-        { key: "is_active", label: "Status", render: (p) => <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${p.is_active ? "bg-emerald-100 text-emerald-700" : "bg-muted text-muted-foreground"}`}>{p.is_active ? "Active" : "Inactive"}</span> },
+        { key: "is_active", label: "Status", render: (p) => <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground"><span className={`h-2 w-2 rounded-full flex-shrink-0 ${p.is_active ? "bg-emerald-500" : "bg-zinc-400"}`} />{p.is_active ? "Active" : "Inactive"}</span> },
       ]}
       dialog={<ProgramDialog open={open} onClose={() => { setOpen(false); setEditItem(null); }} editItem={editItem} />}
     />

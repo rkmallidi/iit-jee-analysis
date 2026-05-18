@@ -232,12 +232,13 @@ class BranchSection(Base):
 # ---------------------------------------------------------------------------
 
 class FacultySection(Base):
-    """Maps a faculty member to a specific Branch+Program+Class+Section slot for one subject."""
+    """Maps a faculty member to a specific Branch+Program+Class+Section slot for one subject.
+    Multiple faculty can teach the same subject in the same slot (e.g. different concepts)."""
     __tablename__ = "faculty_sections"
     __table_args__ = (
         UniqueConstraint(
-            "branch_section_id", "subject",
-            name="uq_faculty_section_subject",
+            "branch_section_id", "subject", "user_id",
+            name="uq_faculty_section_subject_user",
         ),
     )
 

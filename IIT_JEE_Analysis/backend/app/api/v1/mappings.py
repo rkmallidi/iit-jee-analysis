@@ -164,7 +164,8 @@ def assign_faculty_section(data: FacultySectionCreate, db: DbSession):
     try:
         return crud.assign_faculty_section(db, data.user_id, data.branch_section_id, data.subject)
     except ValueError as e:
-        raise HTTPException(404, str(e))
+        msg = str(e)
+        raise HTTPException(409 if "already assigned" in msg else 404, msg)
 
 @router.delete("/faculty-sections/{id}", status_code=204, dependencies=[admin_only])
 def remove_faculty_section(id: int, db: DbSession):

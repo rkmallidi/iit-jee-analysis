@@ -54,7 +54,7 @@ function ClassDialog({ open, onClose, editItem }: { open: boolean; onClose: () =
             {errors.name && <p className="text-xs text-destructive">{errors.name.message}</p>}
           </div>
           <div className="flex items-center justify-between rounded-lg border p-3">
-            <p className="font-medium text-sm">Active</p>
+            <p className="font-medium text-sm">Class Active</p>
             <Switch checked={watch("is_active")} onCheckedChange={(v) => setValue("is_active", v)} />
           </div>
           <DialogFooter>
@@ -97,7 +97,8 @@ export default function ClassesPage() {
       columns={[
         { key: "name", label: "Class Name", render: (c) => <span className="font-semibold">{c.name}</span> },
         { key: "is_active", label: "Status", render: (c) => (
-          <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${c.is_active ? "bg-emerald-100 text-emerald-700" : "bg-muted text-muted-foreground"}`}>
+          <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+            <span className={`h-2 w-2 rounded-full flex-shrink-0 ${c.is_active ? "bg-emerald-500" : "bg-zinc-400"}`} />
             {c.is_active ? "Active" : "Inactive"}
           </span>
         )},

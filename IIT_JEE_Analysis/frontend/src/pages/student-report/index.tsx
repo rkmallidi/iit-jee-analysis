@@ -391,7 +391,7 @@ export default function StudentReportPage() {
           </Card>
 
           {/* Faculty snapshots */}
-          {report.history.some(h => h.math_faculty_name || h.physics_faculty_name || h.chemistry_faculty_name) && (
+          {report.history.some(h => h.math_faculty_names?.length || h.physics_faculty_names?.length || h.chemistry_faculty_names?.length) && (
             <Card>
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm font-semibold">Faculty Snapshot per Exam</CardTitle>
@@ -410,9 +410,9 @@ export default function StudentReportPage() {
                     {report.history.map((h: StudentExamHistory, i: number) => (
                       <tr key={i} className="border-b last:border-0 hover:bg-muted/40">
                         <td className="px-4 py-2 font-medium">{h.exam_code} {h.paper}</td>
-                        <td className="px-4 py-2 text-muted-foreground">{h.math_faculty_name ?? "—"}</td>
-                        <td className="px-4 py-2 text-muted-foreground">{h.physics_faculty_name ?? "—"}</td>
-                        <td className="px-4 py-2 text-muted-foreground">{h.chemistry_faculty_name ?? "—"}</td>
+                        <td className="px-4 py-2 text-muted-foreground">{h.math_faculty_names?.join(", ") || "—"}</td>
+                        <td className="px-4 py-2 text-muted-foreground">{h.physics_faculty_names?.join(", ") || "—"}</td>
+                        <td className="px-4 py-2 text-muted-foreground">{h.chemistry_faculty_names?.join(", ") || "—"}</td>
                       </tr>
                     ))}
                   </tbody>

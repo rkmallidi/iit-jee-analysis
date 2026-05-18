@@ -49,7 +49,7 @@ function SectionDialog({ open, onClose, editItem }: { open: boolean; onClose: ()
             {errors.name && <p className="text-xs text-destructive">{errors.name.message}</p>}
           </div>
           <div className="flex items-center justify-between rounded-lg border p-3">
-            <p className="font-medium text-sm">Active</p>
+            <p className="font-medium text-sm">Section Active</p>
             <Switch checked={watch("is_active")} onCheckedChange={(v) => setValue("is_active", v)} />
           </div>
           <DialogFooter>
@@ -88,7 +88,7 @@ export default function SectionsPage() {
       searchPlaceholder="Search sections…"
       columns={[
         { key: "name", label: "Section Name", render: (s) => <span className="font-semibold">{s.name}</span> },
-        { key: "is_active", label: "Status", render: (s) => <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${s.is_active ? "bg-emerald-100 text-emerald-700" : "bg-muted text-muted-foreground"}`}>{s.is_active ? "Active" : "Inactive"}</span> },
+        { key: "is_active", label: "Status", render: (s) => <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground"><span className={`h-2 w-2 rounded-full flex-shrink-0 ${s.is_active ? "bg-emerald-500" : "bg-zinc-400"}`} />{s.is_active ? "Active" : "Inactive"}</span> },
       ]}
       dialog={<SectionDialog open={open} onClose={() => { setOpen(false); setEditItem(null); }} editItem={editItem} />}
     />

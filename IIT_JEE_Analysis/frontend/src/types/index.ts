@@ -22,6 +22,7 @@ export interface User {
   full_name: string;
   phone?: string;
   whatsapp?: string;
+  avatar_url?: string;
   is_active: boolean;
   created_at: string;
   roles: Role[];
@@ -523,9 +524,9 @@ export interface StudentExamHistory {
   chemistry_attempted: number;
   chemistry_correct: number;
   chemistry_wrong: number;
-  math_faculty_name: string | null;
-  physics_faculty_name: string | null;
-  chemistry_faculty_name: string | null;
+  math_faculty_names: string[];
+  physics_faculty_names: string[];
+  chemistry_faculty_names: string[];
   branch_name: string | null;
 }
 

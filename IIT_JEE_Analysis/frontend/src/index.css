@@ -64,6 +64,7 @@
     --sidebar-ring: 221 83% 53%;
   }
 
-  * { @apply border-border; }
+  *, *::before, *::after { @apply border-border; }
+  button { @apply border-0; }
   body { @apply bg-background text-foreground font-sans antialiased; }
 }

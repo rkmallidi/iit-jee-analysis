@@ -266,7 +266,7 @@ function BranchDialog({ open, onClose, editItem }: { open: boolean; onClose: () 
             <Input {...register("address")} placeholder="Full address" />
           </div>
           <div className="flex items-center justify-between rounded-lg border p-3">
-            <div><p className="font-medium text-sm">Active</p><p className="text-xs text-muted-foreground">Inactive branches won't appear in mappings</p></div>
+            <div><p className="font-medium text-sm">Branch Active</p><p className="text-xs text-muted-foreground">Inactive branches won't appear in mappings</p></div>
             <Switch checked={watch("is_active")} onCheckedChange={v => setValue("is_active", v)} />
           </div>
           <DialogFooter>
@@ -306,7 +306,7 @@ function BranchesTab() {
           { key: "name", label: "Branch Name", render: b => <span className="font-semibold">{b.name}</span> },
           { key: "code", label: "Code", render: b => <code className="rounded bg-muted px-2 py-0.5 text-xs font-mono">{b.code}</code> },
           { key: "address", label: "Address", render: b => <span className="text-muted-foreground">{b.address || "—"}</span> },
-          { key: "is_active", label: "Status", render: b => <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${b.is_active ? "bg-emerald-100 text-emerald-700" : "bg-muted text-muted-foreground"}`}>{b.is_active ? "Active" : "Inactive"}</span> },
+          { key: "is_active", label: "Status", render: b => <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground"><span className={`h-2 w-2 rounded-full flex-shrink-0 ${b.is_active ? "bg-emerald-500" : "bg-zinc-400"}`} />{b.is_active ? "Active" : "Inactive"}</span> },
         ]}
         dialog={<BranchDialog open={open} onClose={() => { setOpen(false); setEditItem(null); }} editItem={editItem} />}
       />
@@ -355,7 +355,7 @@ function ProgramDialog({ open, onClose, editItem }: { open: boolean; onClose: ()
             <Input {...register("description")} placeholder="Optional description" />
           </div>
           <div className="flex items-center justify-between rounded-lg border p-3">
-            <p className="font-medium text-sm">Active</p>
+            <p className="font-medium text-sm">Program Active</p>
             <Switch checked={watch("is_active")} onCheckedChange={v => setValue("is_active", v)} />
           </div>
           <DialogFooter>
@@ -394,7 +394,7 @@ function ProgramsTab() {
         { key: "name", label: "Program", render: p => <span className="font-semibold">{p.name}</span> },
         { key: "code", label: "Code", render: p => <code className="rounded bg-muted px-2 py-0.5 text-xs font-mono">{p.code}</code> },
         { key: "description", label: "Description", render: p => <span className="text-muted-foreground">{p.description || "—"}</span> },
-        { key: "is_active", label: "Status", render: p => <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${p.is_active ? "bg-emerald-100 text-emerald-700" : "bg-muted text-muted-foreground"}`}>{p.is_active ? "Active" : "Inactive"}</span> },
+        { key: "is_active", label: "Status", render: p => <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground"><span className={`h-2 w-2 rounded-full flex-shrink-0 ${p.is_active ? "bg-emerald-500" : "bg-zinc-400"}`} />{p.is_active ? "Active" : "Inactive"}</span> },
       ]}
       dialog={<ProgramDialog open={open} onClose={() => { setOpen(false); setEditItem(null); }} editItem={editItem} />}
     />
@@ -431,7 +431,7 @@ function ClassDialog({ open, onClose, editItem }: { open: boolean; onClose: () =
             {errors.name && <p className="text-xs text-destructive">{errors.name.message}</p>}
           </div>
           <div className="flex items-center justify-between rounded-lg border p-3">
-            <p className="font-medium text-sm">Active</p>
+            <p className="font-medium text-sm">Class Active</p>
             <Switch checked={watch("is_active")} onCheckedChange={v => setValue("is_active", v)} />
           </div>
           <DialogFooter>
@@ -468,7 +468,7 @@ function ClassesTab() {
       searchPlaceholder="Search classes…"
       columns={[
         { key: "name", label: "Class Name", render: c => <span className="font-semibold">{c.name}</span> },
-        { key: "is_active", label: "Status", render: c => <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${c.is_active ? "bg-emerald-100 text-emerald-700" : "bg-muted text-muted-foreground"}`}>{c.is_active ? "Active" : "Inactive"}</span> },
+        { key: "is_active", label: "Status", render: c => <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground"><span className={`h-2 w-2 rounded-full flex-shrink-0 ${c.is_active ? "bg-emerald-500" : "bg-zinc-400"}`} />{c.is_active ? "Active" : "Inactive"}</span> },
       ]}
       dialog={<ClassDialog open={open} onClose={() => { setOpen(false); setEditItem(null); }} editItem={editItem} />}
     />
@@ -505,7 +505,7 @@ function SectionDialog({ open, onClose, editItem }: { open: boolean; onClose: ()
             {errors.name && <p className="text-xs text-destructive">{errors.name.message}</p>}
           </div>
           <div className="flex items-center justify-between rounded-lg border p-3">
-            <p className="font-medium text-sm">Active</p>
+            <p className="font-medium text-sm">Section Active</p>
             <Switch checked={watch("is_active")} onCheckedChange={v => setValue("is_active", v)} />
           </div>
           <DialogFooter>
@@ -542,7 +542,7 @@ function SectionsTab() {
       searchPlaceholder="Search sections…"
       columns={[
         { key: "name", label: "Section Name", render: s => <span className="font-semibold">{s.name}</span> },
-        { key: "is_active", label: "Status", render: s => <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${s.is_active ? "bg-emerald-100 text-emerald-700" : "bg-muted text-muted-foreground"}`}>{s.is_active ? "Active" : "Inactive"}</span> },
+        { key: "is_active", label: "Status", render: s => <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground"><span className={`h-2 w-2 rounded-full flex-shrink-0 ${s.is_active ? "bg-emerald-500" : "bg-zinc-400"}`} />{s.is_active ? "Active" : "Inactive"}</span> },
       ]}
       dialog={<SectionDialog open={open} onClose={() => { setOpen(false); setEditItem(null); }} editItem={editItem} />}
     />

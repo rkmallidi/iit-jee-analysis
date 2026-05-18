@@ -466,24 +466,24 @@ function ExamCard({ le, progMap, classMap, branches, students, questions, allQue
                       }
                     </button>
                   )}
+                  {canEdit && !evalStatus?.evaluated && (
+                    <button
+                      onClick={() => !isBusy && reopenMut.mutate()}
+                      title="Reopen to Published"
+                      disabled={isBusy}
+                      className="rounded-md p-1.5 text-muted-foreground hover:text-amber-600 hover:bg-amber-50 transition-colors disabled:opacity-50"
+                    >
+                      <RotateCcw className="h-3.5 w-3.5" />
+                    </button>
+                  )}
                   {canEdit && (
-                    <>
-                      <button
-                        onClick={() => !isBusy && reopenMut.mutate()}
-                        title="Reopen to Published"
-                        disabled={isBusy}
-                        className="rounded-md p-1.5 text-muted-foreground hover:text-amber-600 hover:bg-amber-50 transition-colors disabled:opacity-50"
-                      >
-                        <RotateCcw className="h-3.5 w-3.5" />
-                      </button>
-                      <button
-                        onClick={onDelete}
-                        title="Delete exam"
-                        className="rounded-md p-1.5 text-muted-foreground hover:text-red-600 hover:bg-red-50 transition-colors"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
-                    </>
+                    <button
+                      onClick={onDelete}
+                      title="Delete exam"
+                      className="rounded-md p-1.5 text-muted-foreground hover:text-red-600 hover:bg-red-50 transition-colors"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
                   )}
                 </>
               )}

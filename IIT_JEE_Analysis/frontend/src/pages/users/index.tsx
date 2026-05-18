@@ -1,14 +1,14 @@
-import { useState, useEffect } from "react";
+import { useRef, useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Plus, Search, Pencil, Loader2, KeyRound, Eye, EyeOff,
-  MoreVertical, UserX, UserCheck, X, Mail, Phone,
+  MoreVertical, UserX, UserCheck, X, Mail, Phone, Camera, ImagePlus, Trash2,
 } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 
-import { getUsers, getRoles, createUser, updateUser, deleteUser } from "@/lib/api";
+import { getUsers, getRoles, createUser, updateUser, deleteUser, uploadUserAvatar } from "@/lib/api";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,6 +20,7 @@ import {
   DropdownMenuSeparator, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { toast } from "@/hooks/use-toast";
+import { cn } from "@/lib/utils";
 import type { Role, User } from "@/types";
 
 // ── Role colours ───────────────────────────────────────────────────────────────
@@ -31,6 +32,175 @@ const ROLE_COLORS: Record<string, string> = {
   Faculty:          "bg-emerald-100 text-emerald-700 border-emerald-200",
   Operator:         "bg-sky-100 text-sky-700 border-sky-200",
 };
+
+// ── Avatar helpers ─────────────────────────────────────────────────────────────
+function avatarSrc(url?: string | null) {
+  if (!url) return null;
+  return url; // relative /uploads/... proxied by Vite, or absolute http
+}
+
+function initials(name: string) {
+  return name.split(" ").map(w => w[0]).slice(0, 2).join("").toUpperCase();
+}
+
+function UserAvatar({
+  user, size = "md",
+}: { user: User; size?: "sm" | "md" | "lg" }) {
+  const sizeClass = { sm: "h-8 w-8 text-[11px]", md: "h-9 w-9 text-xs", lg: "h-16 w-16 text-base" }[size];
+  const src = avatarSrc(user.avatar_url);
+  if (src) {
+    return (
+      <img
+        src={src}
+        alt={user.full_name}
+        className={cn("rounded-full object-cover shrink-0 border border-border", sizeClass)}
+      />
+    );
+  }
+  return (
+    <div className={cn(
+      "rounded-full flex items-center justify-center shrink-0 font-bold",
+      sizeClass,
+      user.is_active ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground",
+    )}>
+      {initials(user.full_name)}
+    </div>
+  );
+}
+
+// ── Photo upload dialog ────────────────────────────────────────────────────────
+function PhotoDialog({ user, onClose }: { user: User; onClose: () => void }) {
+  const qc = useQueryClient();
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [preview, setPreview] = useState<string | null>(avatarSrc(user.avatar_url));
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [uploading, setUploading] = useState(false);
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) {
+      toast({ title: "File too large", description: "Maximum size is 5 MB.", variant: "destructive" });
+      return;
+    }
+    setSelectedFile(file);
+    const reader = new FileReader();
+    reader.onload = ev => setPreview(ev.target?.result as string);
+    reader.readAsDataURL(file);
+    e.target.value = "";
+  };
+
+  const handleSave = async () => {
+    if (!selectedFile) return;
+    setUploading(true);
+    try {
+      await uploadUserAvatar(user.id, selectedFile);
+      qc.invalidateQueries({ queryKey: ["users"] });
+      toast({ title: "Photo updated" });
+      onClose();
+    } catch {
+      toast({ title: "Upload failed", variant: "destructive" });
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleRemove = async () => {
+    setUploading(true);
+    try {
+      await updateUser(user.id, { clear_avatar: true });
+      qc.invalidateQueries({ queryKey: ["users"] });
+      toast({ title: "Photo removed" });
+      onClose();
+    } catch {
+      toast({ title: "Failed to remove photo", variant: "destructive" });
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  return (
+    <Dialog open onOpenChange={o => { if (!o) onClose(); }}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Camera className="h-4 w-4 text-primary" /> Update Photo
+          </DialogTitle>
+          <DialogDescription>
+            Upload a photo for <span className="font-semibold text-foreground">{user.full_name}</span>
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="flex flex-col items-center gap-5 py-2">
+          {/* Preview */}
+          <div className="relative group">
+            {preview ? (
+              <img
+                src={preview}
+                alt="Preview"
+                className="h-28 w-28 rounded-full object-cover border-2 border-border shadow"
+              />
+            ) : (
+              <div className="h-28 w-28 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-2xl border-2 border-border shadow">
+                {initials(user.full_name)}
+              </div>
+            )}
+            <button
+              type="button"
+              onClick={() => fileRef.current?.click()}
+              className="absolute inset-0 rounded-full bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity"
+            >
+              <Camera className="h-6 w-6 text-white" />
+            </button>
+          </div>
+
+          {/* Actions */}
+          <div className="flex flex-col items-center gap-2 w-full">
+            <input
+              ref={fileRef}
+              type="file"
+              accept="image/jpeg,image/png,image/webp,image/gif"
+              className="hidden"
+              onChange={handleFileChange}
+            />
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full"
+              onClick={() => fileRef.current?.click()}
+              disabled={uploading}
+            >
+              <ImagePlus className="mr-2 h-4 w-4" />
+              Choose Photo
+            </Button>
+            <p className="text-[11px] text-muted-foreground">JPEG, PNG, WebP or GIF · max 5 MB</p>
+          </div>
+        </div>
+
+        <DialogFooter className="gap-2">
+          {user.avatar_url && !selectedFile && (
+            <Button
+              type="button"
+              variant="ghost"
+              className="text-destructive hover:text-destructive mr-auto"
+              onClick={handleRemove}
+              disabled={uploading}
+            >
+              <Trash2 className="mr-1.5 h-3.5 w-3.5" /> Remove
+            </Button>
+          )}
+          <Button type="button" variant="outline" onClick={onClose} disabled={uploading}>
+            Cancel
+          </Button>
+          <Button type="button" onClick={handleSave} disabled={!selectedFile || uploading}>
+            {uploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+            Save Photo
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
 
 // ── Schemas ────────────────────────────────────────────────────────────────────
 const baseSchema = z.object({
@@ -106,7 +276,6 @@ function UserDialog({ open, onClose, editUser, roles }: {
           <DialogTitle>{isEdit ? "Edit User" : "Create New User"}</DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit(d => mutation.mutate({ ...d, role_ids: selectedRoles }))} className="space-y-4 pt-2">
-          {/* Name + Username */}
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
               <Label>Full Name</Label>
@@ -120,7 +289,6 @@ function UserDialog({ open, onClose, editUser, roles }: {
             </div>
           </div>
 
-          {/* Email + Phone */}
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
               <Label>Email <span className="text-muted-foreground text-xs">(optional)</span></Label>
@@ -133,7 +301,6 @@ function UserDialog({ open, onClose, editUser, roles }: {
             </div>
           </div>
 
-          {/* Password — create only */}
           {!isEdit && (
             <div className="space-y-1.5">
               <Label>Password</Label>
@@ -142,7 +309,6 @@ function UserDialog({ open, onClose, editUser, roles }: {
             </div>
           )}
 
-          {/* Roles */}
           <div className="space-y-2">
             <div className="flex items-center gap-2">
               <Label>Roles</Label>
@@ -259,6 +425,7 @@ export default function UsersPage() {
   const [editUser, setEditUser]       = useState<User | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<User | null>(null);
   const [resetTarget, setResetTarget]   = useState<User | null>(null);
+  const [photoTarget, setPhotoTarget]   = useState<User | null>(null);
 
   const { data: users = [], isLoading } = useQuery({
     queryKey: ["users"],
@@ -315,7 +482,6 @@ export default function UsersPage() {
 
       {/* Search + Role filter */}
       <div className="flex flex-wrap gap-2 items-center">
-        {/* Search */}
         <div className="relative flex-1 min-w-[200px] max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
@@ -331,7 +497,6 @@ export default function UsersPage() {
           )}
         </div>
 
-        {/* Role filter pills */}
         <div className="flex flex-wrap gap-1.5">
           {["all", ...roles.map(r => r.name)].map(name => (
             <button
@@ -356,7 +521,7 @@ export default function UsersPage() {
         </div>
       </div>
 
-      {/* User cards */}
+      {/* User list */}
       <Card>
         <CardContent className="p-0">
           {isLoading ? (
@@ -372,16 +537,22 @@ export default function UsersPage() {
             <div className="divide-y">
               {filtered.map(u => (
                 <div key={u.id} className={`flex items-center gap-4 px-5 py-3.5 hover:bg-muted/20 transition-colors ${!u.is_active ? "opacity-50" : ""}`}>
-                  {/* Avatar */}
-                  <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xs font-bold ${u.is_active ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"}`}>
-                    {u.full_name.slice(0, 2).toUpperCase()}
-                  </div>
+                  {/* Avatar — click to update photo */}
+                  <button
+                    type="button"
+                    onClick={() => setPhotoTarget(u)}
+                    title="Update photo"
+                    className="relative group shrink-0"
+                  >
+                    <UserAvatar user={u} size="md" />
+                    <span className="absolute inset-0 rounded-full bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                      <Camera className="h-3.5 w-3.5 text-white" />
+                    </span>
+                  </button>
 
-                  {/* Name + username + status dot */}
+                  {/* Name + username */}
                   <div className="w-44 shrink-0 min-w-0">
-                    <div className="flex items-center gap-1.5">
-                      <span className="font-semibold text-sm truncate">{u.full_name}</span>
-                    </div>
+                    <span className="font-semibold text-sm truncate block">{u.full_name}</span>
                     <div className="flex items-center gap-1.5 mt-0.5">
                       <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${u.is_active ? "bg-emerald-500" : "bg-zinc-400"}`} />
                       <span className="text-xs text-muted-foreground">@{u.username}</span>
@@ -392,7 +563,7 @@ export default function UsersPage() {
                   <div className="hidden md:flex items-center gap-1.5 w-52 shrink-0 min-w-0">
                     <Mail className="h-3.5 w-3.5 text-muted-foreground/50 shrink-0" />
                     {u.email
-                      ? <a href={`mailto:${u.email}`} className="text-xs text-muted-foreground truncate hover:text-primary hover:underline transition-colors" title={`Send email to ${u.email}`}>{u.email}</a>
+                      ? <a href={`mailto:${u.email}`} className="text-xs text-muted-foreground truncate hover:text-primary hover:underline transition-colors">{u.email}</a>
                       : <span className="text-xs italic opacity-40">—</span>}
                   </div>
 
@@ -400,7 +571,7 @@ export default function UsersPage() {
                   <div className="hidden lg:flex items-center gap-1.5 w-36 shrink-0">
                     <Phone className="h-3.5 w-3.5 text-muted-foreground/50 shrink-0" />
                     {u.phone
-                      ? <a href={`tel:${u.phone}`} className="text-xs text-muted-foreground hover:text-primary hover:underline transition-colors" title={`Call ${u.phone}`}>{u.phone}</a>
+                      ? <a href={`tel:${u.phone}`} className="text-xs text-muted-foreground hover:text-primary hover:underline transition-colors">{u.phone}</a>
                       : <span className="text-xs italic opacity-40">—</span>}
                   </div>
 
@@ -424,15 +595,15 @@ export default function UsersPage() {
                       <DropdownMenuItem onClick={() => { setEditUser(u); setDialogOpen(true); }}>
                         <Pencil className="mr-2 h-3.5 w-3.5" /> Edit
                       </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => setPhotoTarget(u)}>
+                        <Camera className="mr-2 h-3.5 w-3.5" /> Update Photo
+                      </DropdownMenuItem>
                       <DropdownMenuItem onClick={() => setResetTarget(u)} className="text-amber-600 focus:text-amber-600">
                         <KeyRound className="mr-2 h-3.5 w-3.5" /> Reset Password
                       </DropdownMenuItem>
                       <DropdownMenuSeparator />
                       {u.is_active ? (
-                        <DropdownMenuItem
-                          onClick={() => setDeleteTarget(u)}
-                          className="text-destructive focus:text-destructive"
-                        >
+                        <DropdownMenuItem onClick={() => setDeleteTarget(u)} className="text-destructive focus:text-destructive">
                           <UserX className="mr-2 h-3.5 w-3.5" /> Deactivate
                         </DropdownMenuItem>
                       ) : (
@@ -459,6 +630,9 @@ export default function UsersPage() {
         editUser={editUser}
         roles={roles}
       />
+      {photoTarget && (
+        <PhotoDialog user={photoTarget} onClose={() => setPhotoTarget(null)} />
+      )}
       {resetTarget && (
         <ResetPasswordDialog user={resetTarget} onClose={() => setResetTarget(null)} />
       )}

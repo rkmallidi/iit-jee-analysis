@@ -86,6 +86,10 @@ def update_user(db: Session, user: User, data: UserUpdate) -> User:
         user.phone = data.phone
     if data.whatsapp is not None:
         user.whatsapp = data.whatsapp
+    if data.clear_avatar:
+        user.avatar_url = None
+    elif data.avatar_url is not None:
+        user.avatar_url = data.avatar_url
     if data.is_active is not None:
         user.is_active = data.is_active
     if data.password is not None:

@@ -289,18 +289,17 @@ def run_evaluation(db: Session, exam: Exam) -> dict:
     is_advanced = exam.exam_type == EXAM_TYPE_ADVANCED
 
     # ── Fetch faculty snapshots (section-level) ─────────────────────────────────
-    # FacultySection: user_id, branch_section_id, subject
+    # Multiple faculty may co-teach the same subject in a section.
     faculty_rows = db.execute(
         select(FacultySection.branch_section_id, FacultySection.subject,
                User.id.label("uid"), User.full_name)
         .join(User, FacultySection.user_id == User.id)
         .where(FacultySection.class_id == exam.class_id)
     ).all()
-    # faculty_by_bs_subj[(branch_section_id, subject)] = (user_id, full_name)
-    faculty_by_bs_subj: dict[tuple[int, str], tuple[int, str]] = {
-        (r.branch_section_id, r.subject): (r.uid, r.full_name)
-        for r in faculty_rows
-    }
+    # faculty_by_bs_subj[(branch_section_id, subject)] = [(user_id, full_name), ...]
+    faculty_by_bs_subj: dict[tuple[int, str], list[tuple[int, str]]] = {}
+    for r in faculty_rows:
+        faculty_by_bs_subj.setdefault((r.branch_section_id, r.subject), []).append((r.uid, r.full_name))
 
     # ── Fetch principal / dean snapshots (branch-level) ──────────────────────────
     principal_rows = db.execute(
@@ -396,16 +395,16 @@ def run_evaluation(db: Session, exam: Exam) -> dict:
             section_id = placement.get("section_id")
             bs_id = placement.get("bs_id")
 
-            # Faculty snapshot for this student's section
-            def _fac(subj: str):
+            # Faculty snapshot — returns parallel lists of ids and names
+            def _fac_lists(subj: str) -> tuple[list[int], list[str]]:
                 if bs_id is None:
-                    return None, None
-                f = faculty_by_bs_subj.get((bs_id, subj))
-                return (f[0], f[1]) if f else (None, None)
+                    return [], []
+                entries = faculty_by_bs_subj.get((bs_id, subj), [])
+                return [e[0] for e in entries], [e[1] for e in entries]
 
-            math_fac_id, math_fac_name = _fac("Mathematics")
-            phys_fac_id, phys_fac_name = _fac("Physics")
-            chem_fac_id, chem_fac_name = _fac("Chemistry")
+            math_fac_ids, math_fac_names = _fac_lists("Mathematics")
+            phys_fac_ids, phys_fac_names = _fac_lists("Physics")
+            chem_fac_ids, chem_fac_names = _fac_lists("Chemistry")
 
             principal = principal_by_branch.get(branch_id) if branch_id else None
             dean = dean_by_branch.get(branch_id) if branch_id else None
@@ -433,9 +432,9 @@ def run_evaluation(db: Session, exam: Exam) -> dict:
                 "phys_wrg":      sc["phys_wrg"], "phys_uat": sc["phys_uat"],
                 "chem_att":      sc["chem_att"], "chem_cor": sc["chem_cor"],
                 "chem_wrg":      sc["chem_wrg"], "chem_uat": sc["chem_uat"],
-                "math_fac_id":   math_fac_id,   "math_fac_name": math_fac_name,
-                "phys_fac_id":   phys_fac_id,   "phys_fac_name": phys_fac_name,
-                "chem_fac_id":   chem_fac_id,   "chem_fac_name": chem_fac_name,
+                "math_fac_ids":  math_fac_ids,  "math_fac_names":  math_fac_names,
+                "phys_fac_ids":  phys_fac_ids,  "phys_fac_names":  phys_fac_names,
+                "chem_fac_ids":  chem_fac_ids,  "chem_fac_names":  chem_fac_names,
                 "principal_id":  principal[0] if principal else None,
                 "principal_name": principal[1] if principal else None,
                 "dean_id":       dean[0] if dean else None,
@@ -545,9 +544,9 @@ def run_evaluation(db: Session, exam: Exam) -> dict:
                 above_mi_physics   = (s["physics"]  >= mi_phys)  if mi_phys  is not None else None,
                 above_mi_chemistry = (s["chemistry"] >= mi_chem) if mi_chem  is not None else None,
 
-                math_faculty_id    = s["math_fac_id"],   math_faculty_name    = s["math_fac_name"],
-                physics_faculty_id = s["phys_fac_id"],   physics_faculty_name = s["phys_fac_name"],
-                chemistry_faculty_id = s["chem_fac_id"], chemistry_faculty_name = s["chem_fac_name"],
+                math_faculty_ids    = s["math_fac_ids"],  math_faculty_names    = s["math_fac_names"],
+                physics_faculty_ids = s["phys_fac_ids"],  physics_faculty_names = s["phys_fac_names"],
+                chemistry_faculty_ids = s["chem_fac_ids"], chemistry_faculty_names = s["chem_fac_names"],
                 principal_id       = s["principal_id"],  principal_name       = s["principal_name"],
                 dean_id            = s["dean_id"],        dean_name            = s["dean_name"],
 
@@ -606,9 +605,9 @@ def run_evaluation(db: Session, exam: Exam) -> dict:
                 "chem_cor":    (p1["chem_cor"] if p1 else 0) + (p2["chem_cor"] if p2 else 0),
                 "chem_wrg":    (p1["chem_wrg"] if p1 else 0) + (p2["chem_wrg"] if p2 else 0),
                 # Use P1 faculty/leadership snapshot (same student, same section)
-                "math_fac_id":   ref["math_fac_id"],   "math_fac_name":   ref["math_fac_name"],
-                "phys_fac_id":   ref["phys_fac_id"],   "phys_fac_name":   ref["phys_fac_name"],
-                "chem_fac_id":   ref["chem_fac_id"],   "chem_fac_name":   ref["chem_fac_name"],
+                "math_fac_ids":  ref["math_fac_ids"],  "math_fac_names":  ref["math_fac_names"],
+                "phys_fac_ids":  ref["phys_fac_ids"],  "phys_fac_names":  ref["phys_fac_names"],
+                "chem_fac_ids":  ref["chem_fac_ids"],  "chem_fac_names":  ref["chem_fac_names"],
                 "principal_id":  ref["principal_id"],  "principal_name":  ref["principal_name"],
                 "dean_id":       ref["dean_id"],        "dean_name":       ref["dean_name"],
                 "max_combined":  max_combined,
@@ -731,9 +730,9 @@ def run_evaluation(db: Session, exam: Exam) -> dict:
                 above_mi_physics     = (s["cum_physics"] >= mi_cum_phys)  if mi_cum_phys  is not None else None,
                 above_mi_chemistry   = (s["cum_chem"]    >= mi_cum_chem)  if mi_cum_chem  is not None else None,
 
-                math_faculty_id      = s["math_fac_id"],   math_faculty_name    = s["math_fac_name"],
-                physics_faculty_id   = s["phys_fac_id"],   physics_faculty_name = s["phys_fac_name"],
-                chemistry_faculty_id = s["chem_fac_id"],   chemistry_faculty_name = s["chem_fac_name"],
+                math_faculty_ids      = s["math_fac_ids"],  math_faculty_names    = s["math_fac_names"],
+                physics_faculty_ids   = s["phys_fac_ids"],  physics_faculty_names = s["phys_fac_names"],
+                chemistry_faculty_ids = s["chem_fac_ids"],  chemistry_faculty_names = s["chem_fac_names"],
                 principal_id         = s["principal_id"],  principal_name        = s["principal_name"],
                 dean_id              = s["dean_id"],        dean_name             = s["dean_name"],
 

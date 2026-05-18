@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useRef, useState, useEffect, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, Download, FileSpreadsheet, Loader2, AlertCircle, CheckCircle2, BookOpenCheck, Info, Pencil, Key, Flag, Lock, Trash2 } from "lucide-react";
@@ -164,7 +164,7 @@ function ExamQuestionEditDialog({ question: q, examId, examStatus, onClose }: Ed
   const qc = useQueryClient();
   const isPublished  = examStatus === "published";
   const isCompleted  = examStatus === "completed";
-  const isLocked     = isPublished || isCompleted;  // core fields locked when published/completed
+  const isLocked     = isPublished || isCompleted;
   const fullyLocked  = isCompleted;
 
   const [subject, setSubject]           = useState(q.subject);
@@ -180,39 +180,53 @@ function ExamQuestionEditDialog({ question: q, examId, examStatus, onClose }: Ed
   const [isDeleted, setIsDeleted]       = useState(q.is_deleted);
   const [isBonus, setIsBonus]           = useState(q.is_bonus);
   const [akc, setAkc]                  = useState(q.akc ?? "");
+  const [saveStatus, setSaveStatus]     = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const debounceRef                     = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isFirstRender                   = useRef(true);
 
   const toFloat = (v: string) => v.trim() === "" ? null : parseFloat(v);
   const fromSel = (v: string) => v === NONE ? null : v;
 
+  const buildPayload = useCallback(() =>
+    isPublished
+      ? { akc: akc.trim() || null, is_deleted: isDeleted, is_bonus: isBonus }
+      : {
+          subject,
+          topic: topic.trim() || null,
+          sub_topic: subTopic.trim() || null,
+          difficulty: fromSel(difficulty),
+          question_type: fromSel(questionType),
+          marks: toFloat(marks),
+          negative_marks: toFloat(negMarks),
+          bkc: answer.trim() || null,
+          partial_marks: fromSel(questionType) === "MCQ" ? toFloat(partial) : null,
+          is_deleted: isDeleted,
+          is_bonus: isBonus,
+          akc: akc.trim() || null,
+        },
+  [isPublished, akc, isDeleted, isBonus, subject, topic, subTopic, difficulty, questionType, marks, negMarks, answer, partial]);
+
   const save = useMutation({
-    mutationFn: () => {
-      const payload = isPublished
-        ? { akc: akc.trim() || null, is_deleted: isDeleted, is_bonus: isBonus }
-        : {
-            subject,
-            topic: topic.trim() || null,
-            sub_topic: subTopic.trim() || null,
-            difficulty: fromSel(difficulty),
-            question_type: fromSel(questionType),
-            marks: toFloat(marks),
-            negative_marks: toFloat(negMarks),
-            bkc: answer.trim() || null,
-            partial_marks: fromSel(questionType) === "MCQ" ? toFloat(partial) : null,
-            is_deleted: isDeleted,
-            is_bonus: isBonus,
-            akc: akc.trim() || null,
-          };
-      return updateExamQuestion(examId, q.id, payload);
-    },
+    mutationFn: () => updateExamQuestion(examId, q.id, buildPayload()),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["exam-questions", examId] });
-      toast({ title: `Q${q.qno} updated` });
-      onClose();
+      setSaveStatus("saved");
     },
     onError: (err: any) => {
-      toast({ title: err?.response?.data?.detail ?? "Update failed", variant: "destructive" });
+      setSaveStatus("error");
+      toast({ title: err?.response?.data?.detail ?? "Auto-save failed", variant: "destructive" });
     },
   });
+
+  // Auto-save on any field change, debounced 800 ms
+  useEffect(() => {
+    if (isFirstRender.current) { isFirstRender.current = false; return; }
+    if (fullyLocked) return;
+    setSaveStatus("saving");
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => { save.mutate(); }, 800);
+    return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
+  }, [subject, topic, subTopic, difficulty, questionType, marks, negMarks, answer, partial, isDeleted, isBonus, akc]);
 
   const answerHint: Record<string, string> = {
     SCQ:     "e.g. A  or  A|B for alternates",
@@ -436,12 +450,19 @@ function ExamQuestionEditDialog({ question: q, examId, examStatus, onClose }: Ed
         </div>
 
         {/* Sticky footer */}
-        <div className="shrink-0 border-t px-6 py-4 flex justify-end gap-2 bg-background">
-          <Button variant="outline" onClick={onClose}>Cancel</Button>
-          <Button onClick={() => save.mutate()} disabled={!subject || save.isPending || fullyLocked}>
-            {save.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-            Save Changes
-          </Button>
+        <div className="shrink-0 border-t px-6 py-4 flex items-center justify-between gap-2 bg-background">
+          <span className="text-xs text-muted-foreground flex items-center gap-1.5">
+            {saveStatus === "saving" && <><Loader2 className="h-3 w-3 animate-spin" /> Saving…</>}
+            {saveStatus === "saved"  && <><CheckCircle2 className="h-3 w-3 text-emerald-500" /> Saved</>}
+            {saveStatus === "error"  && <><AlertCircle className="h-3 w-3 text-destructive" /> Save failed</>}
+          </span>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={onClose}>Close</Button>
+            <Button onClick={() => save.mutate()} disabled={!subject || save.isPending || fullyLocked}>
+              {save.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              Save
+            </Button>
+          </div>
         </div>
 
       </SheetContent>
