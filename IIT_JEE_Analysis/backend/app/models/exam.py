@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime, timezone
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Optional, List
 
 from sqlalchemy import Date, DateTime, Float, ForeignKey, Integer, String, UniqueConstraint, Enum
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -65,7 +65,7 @@ class Exam(Base):
     academic_year: Mapped["AcademicYear"] = relationship("AcademicYear", backref="exams")
     program: Mapped["Program"] = relationship("Program", backref="exams")
     class_: Mapped["Class"] = relationship("Class", foreign_keys=[class_id], backref="exams")
-    questions: Mapped[list["ExamQuestion"]] = relationship(
+    questions: Mapped[List["ExamQuestion"]] = relationship(
         "ExamQuestion", back_populates="exam", cascade="all, delete-orphan"
     )
 

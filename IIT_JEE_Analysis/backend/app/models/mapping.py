@@ -4,7 +4,7 @@ Kept in one file to avoid circular imports — parent models import from here.
 """
 import enum
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, List
 
 from sqlalchemy import (
     DateTime, Enum, ForeignKey, Integer, UniqueConstraint
@@ -222,7 +222,7 @@ class BranchSection(Base):
     program: Mapped["Program"] = relationship("Program", back_populates="branch_sections")  # type: ignore[name-defined]
     class_: Mapped["Class"] = relationship("Class", back_populates="branch_sections")  # type: ignore[name-defined]
     section: Mapped["Section"] = relationship("Section", back_populates="branch_sections")  # type: ignore[name-defined]
-    faculty_sections: Mapped[list["FacultySection"]] = relationship(
+    faculty_sections: Mapped[List["FacultySection"]] = relationship(
         "FacultySection", back_populates="branch_section", cascade="all, delete-orphan"
     )
 

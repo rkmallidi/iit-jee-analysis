@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime, timezone
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, List
 
 from sqlalchemy import Boolean, Date, DateTime, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -27,6 +27,6 @@ class AcademicYear(Base):
         nullable=False,
     )
 
-    branch_sections: Mapped[list["BranchSection"]] = relationship(
+    branch_sections: Mapped[List["BranchSection"]] = relationship(
         "BranchSection", back_populates="academic_year"
     )

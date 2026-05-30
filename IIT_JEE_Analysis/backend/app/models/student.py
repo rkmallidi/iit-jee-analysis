@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import enum
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Optional, List
 
 from sqlalchemy import Boolean, DateTime, Integer, String, Enum
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -28,8 +28,8 @@ class Student(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     admission_no: Mapped[str] = mapped_column(String(50), unique=True, nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
-    phone: Mapped[str | None] = mapped_column(String(30), nullable=True)
-    target_rank: Mapped[str | None] = mapped_column(
+    phone: Mapped[Optional[str]] = mapped_column(String(30), nullable=True)
+    target_rank: Mapped[Optional[str]] = mapped_column(
         Enum(RankCategory, name="rankcategory_enum", values_callable=lambda x: [e.value for e in x]),
         nullable=True,
     )
@@ -40,7 +40,7 @@ class Student(Base):
         nullable=False,
     )
 
-    section_mappings: Mapped[list["StudentSection"]] = relationship(
+    section_mappings: Mapped[List["StudentSection"]] = relationship(
         "StudentSection", back_populates="student",
         cascade="all, delete-orphan",
     )

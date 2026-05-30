@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import enum
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, List
+from typing import TYPE_CHECKING, List, Optional
 
 from sqlalchemy import (
     Boolean, DateTime, Enum, ForeignKey, Integer, String, Text, UniqueConstraint
@@ -34,9 +34,9 @@ class Role(Base):
         unique=True,
         nullable=False,
     )
-    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
-    user_roles: Mapped[list["UserRole"]] = relationship("UserRole", back_populates="role")
+    user_roles: Mapped[List["UserRole"]] = relationship("UserRole", back_populates="role")
 
     def __repr__(self) -> str:
         return f"<Role {self.name}>"
@@ -47,14 +47,14 @@ class User(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     username: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
-    email: Mapped[str | None] = mapped_column(String(255), unique=True, nullable=True, index=True)
+    email: Mapped[Optional[str]] = mapped_column(String(255), unique=True, nullable=True, index=True)
     full_name: Mapped[str] = mapped_column(String(255), nullable=False)
     hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
-    phone: Mapped[str | None] = mapped_column(String(32), nullable=True)
-    whatsapp: Mapped[str | None] = mapped_column(String(32), nullable=True)
-    avatar_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    phone: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    whatsapp: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    avatar_url: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
-    theme_prefs: Mapped[str | None] = mapped_column(
+    theme_prefs: Mapped[Optional[str]] = mapped_column(
         Text, nullable=True, comment="JSON blob: {theme, primary_color, ...}"
     )
     created_at: Mapped[datetime] = mapped_column(
@@ -73,7 +73,7 @@ class User(Base):
     user_roles: Mapped[List["UserRole"]] = relationship(
         "UserRole", back_populates="user", cascade="all, delete-orphan"
     )
-    faculty_subject: Mapped["FacultySubject | None"] = relationship(
+    faculty_subject: Mapped[Optional["FacultySubject"]] = relationship(
         "FacultySubject", back_populates="faculty", uselist=False, cascade="all, delete-orphan"
     )
     dean_branches: Mapped[List["DeanBranch"]] = relationship(

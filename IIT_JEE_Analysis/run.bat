@@ -22,6 +22,10 @@ if %ERRORLEVEL% NEQ 0 (
 )
 echo   [OK] Python found.
 
+:: Resolve full python path so new windows invoke the same interpreter
+for /f "delims=" %%p in ('where python 2^>nul') do set "PYTHON=%%p"
+if not defined PYTHON set "PYTHON=python"
+
 where node >nul 2>&1
 if %ERRORLEVEL% NEQ 0 (
     echo   [ERROR] Node.js not found. Please install Node 18+ and add it to PATH.
@@ -50,7 +54,7 @@ if not exist ".env" (
 
 :: Install dependencies
 echo   Installing Python packages (this may take a minute)...
-pip install -r requirements.txt --quiet --break-system-packages 2>nul || pip install -r requirements.txt --quiet
+python -m pip install -r requirements.txt --quiet --break-system-packages 2>nul || python -m pip install -r requirements.txt --quiet
 
 :: Clear Python bytecode cache to avoid stale migration code
 echo   Clearing Python cache...
@@ -58,7 +62,7 @@ for /d /r . %%d in (__pycache__) do @if exist "%%d" rd /s /q "%%d" 2>nul
 
 :: Run migrations
 echo   Running Alembic migrations...
-alembic upgrade head
+python -m alembic upgrade head
 if %ERRORLEVEL% NEQ 0 (
     echo.
     echo   [ERROR] Migration failed.
@@ -84,8 +88,8 @@ echo   Seeding database (roles + admin user)...
 python seed.py
 
 :: Start backend in new window
-echo   Starting FastAPI backend on port 8000...
-start "JEE Backend" cmd /k "cd /d %~dp0backend && uvicorn app.main:app --reload --port 8000"
+echo   Starting FastAPI backend on 0.0.0.0:8000...
+start "JEE Backend" cmd /k "cd /d %~dp0backend && "%PYTHON%" -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000"
 
 cd ..
 
@@ -103,8 +107,8 @@ npm install --registry https://registry.npmjs.org/
 if ERRORLEVEL 1 echo   [WARN] npm install had warnings, continuing...
 
 :fe_ready
-echo   Starting Vite dev server on port 5173...
-start "JEE Frontend" cmd /k "cd /d "%~dp0frontend" && npm run dev"
+echo   Starting Vite dev server on 0.0.0.0:5173...
+start "JEE Frontend" cmd /k "cd /d "%~dp0frontend" && npm run dev -- --host 0.0.0.0"
 
 cd /d "%~dp0"
 
@@ -126,6 +130,10 @@ echo.
 echo    Frontend  : http://localhost:5173
 echo    Backend   : http://localhost:8000
 echo    API Docs  : http://localhost:8000/docs
+echo.
+echo    Network access:
+echo      Open http://YOUR-LAN-IP:5173 from another device on the same network.
+echo      Find YOUR-LAN-IP with: ipconfig
 echo.
 echo    Default Admin Login:
 echo      Username : admin
