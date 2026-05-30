@@ -6,6 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.security import hash_password
+from app.models.mapping import FacultySubject, SubjectName
 from app.models.user import Role, RoleName, User, UserRole
 from app.schemas.user import UserCreate, UserUpdate
 
@@ -37,8 +38,19 @@ def seed_roles(db: Session) -> None:
 
 def _user_query():
     return select(User).options(
-        selectinload(User.user_roles).selectinload(UserRole.role)
+        selectinload(User.user_roles).selectinload(UserRole.role),
+        selectinload(User.faculty_subjects),
     )
+
+
+def _replace_faculty_subjects(db: Session, user_id: int, subjects: list[SubjectName]) -> None:
+    db.query(FacultySubject).filter(FacultySubject.user_id == user_id).delete()
+    for subject in dict.fromkeys(subjects):
+        db.add(FacultySubject(user_id=user_id, subject=subject))
+
+
+def _is_faculty_role_name(name: RoleName | str) -> bool:
+    return name == RoleName.FACULTY or name == RoleName.FACULTY.value
 
 
 def get_user(db: Session, user_id: int) -> Optional[User]:
@@ -58,6 +70,11 @@ def get_users(db: Session, skip: int = 0, limit: int = 100) -> Sequence[User]:
 
 
 def create_user(db: Session, data: UserCreate) -> User:
+    roles = get_roles_by_ids(db, data.role_ids) if data.role_ids else []
+    is_faculty = any(_is_faculty_role_name(role.name) for role in roles)
+    if is_faculty and not data.faculty_subjects:
+        raise ValueError("Faculty subject is required")
+
     user = User(
         username=data.username,
         email=data.email,
@@ -69,15 +86,22 @@ def create_user(db: Session, data: UserCreate) -> User:
     )
     db.add(user)
     db.flush()  # get user.id
-    if data.role_ids:
-        roles = get_roles_by_ids(db, data.role_ids)
-        for role in roles:
-            db.add(UserRole(user_id=user.id, role_id=role.id))
+    for role in roles:
+        db.add(UserRole(user_id=user.id, role_id=role.id))
+    if is_faculty:
+        _replace_faculty_subjects(db, user.id, data.faculty_subjects)
     db.commit()
     return db.scalar(_user_query().where(User.id == user.id))
 
 
 def update_user(db: Session, user: User, data: UserUpdate) -> User:
+    target_roles = get_roles_by_ids(db, data.role_ids) if data.role_ids is not None else [ur.role for ur in user.user_roles]
+    will_be_faculty = any(_is_faculty_role_name(role.name) for role in target_roles)
+    if will_be_faculty:
+        target_subjects = data.faculty_subjects if data.faculty_subjects is not None else [fs.subject for fs in user.faculty_subjects]
+        if not target_subjects:
+            raise ValueError("Faculty subject is required")
+
     if data.email is not None:
         user.email = data.email
     if data.full_name is not None:
@@ -97,9 +121,12 @@ def update_user(db: Session, user: User, data: UserUpdate) -> User:
     if data.role_ids is not None:
         # Replace roles
         db.query(UserRole).filter(UserRole.user_id == user.id).delete()
-        roles = get_roles_by_ids(db, data.role_ids)
-        for role in roles:
+        for role in target_roles:
             db.add(UserRole(user_id=user.id, role_id=role.id))
+        if not will_be_faculty:
+            _replace_faculty_subjects(db, user.id, [])
+    if data.faculty_subjects is not None:
+        _replace_faculty_subjects(db, user.id, data.faculty_subjects if will_be_faculty else [])
     db.commit()
     return db.scalar(_user_query().where(User.id == user.id))
 

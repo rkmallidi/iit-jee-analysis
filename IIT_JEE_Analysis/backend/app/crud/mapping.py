@@ -290,6 +290,14 @@ def assign_faculty_section(
     bs = db.get(BranchSection, branch_section_id)
     if not bs:
         raise ValueError(f"BranchSection {branch_section_id} not found")
+    allowed_subject = db.scalar(
+        select(FacultySubject).where(
+            FacultySubject.user_id == user_id,
+            FacultySubject.subject == subject,
+        )
+    )
+    if not allowed_subject:
+        raise ValueError("Faculty is not assigned to this subject")
     duplicate = db.scalar(
         select(FacultySection).where(
             FacultySection.branch_section_id == branch_section_id,

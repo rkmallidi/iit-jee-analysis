@@ -5,6 +5,7 @@ from typing import Any, Optional
 
 from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
 
+from app.models.mapping import SubjectName
 from app.models.user import RoleName
 
 
@@ -28,6 +29,7 @@ class UserBase(BaseModel):
     whatsapp: Optional[str] = None
     avatar_url: Optional[str] = None
     is_active: bool = True
+    faculty_subjects: list[SubjectName] = []
 
 
 class UserCreate(UserBase):
@@ -52,6 +54,7 @@ class UserUpdate(BaseModel):
     is_active: Optional[bool] = None
     password: Optional[str] = None
     role_ids: Optional[list[int]] = None
+    faculty_subjects: Optional[list[SubjectName]] = None
 
 
 class UserThemeUpdate(BaseModel):
@@ -72,6 +75,8 @@ class UserOut(UserBase):
         # ORM object
         if hasattr(data, "user_roles"):
             data.__dict__.setdefault("roles", [ur.role for ur in data.user_roles])
+        if hasattr(data, "faculty_subjects"):
+            data.__dict__["faculty_subjects"] = [fs.subject for fs in data.faculty_subjects]
         if hasattr(data, "theme_prefs") and isinstance(data.theme_prefs, str):
             try:
                 data.__dict__["theme_prefs"] = json.loads(data.theme_prefs)

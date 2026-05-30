@@ -661,7 +661,9 @@ function BranchDashboardTab() {
                                                 const slotFms = facultyByBsId[bs.id] ?? [];
                                                 const subjFms = slotFms.filter(f => f.subject === subj);
                                                 const assignedIds = new Set(subjFms.map(f => f.user_id));
-                                                const available = faculty.filter(u => !assignedIds.has(u.id));
+                                                const available = faculty.filter(u =>
+                                                  !assignedIds.has(u.id) && (u.faculty_subjects ?? []).includes(subj)
+                                                );
                                                 const hasAny = subjFms.length > 0;
                                                 const subjColor = subj === "Mathematics" ? "text-blue-600" : subj === "Physics" ? "text-purple-600" : "text-green-600";
                                                 const subjShort = subj === "Mathematics" ? "Maths" : subj;
@@ -708,7 +710,7 @@ function BranchDashboardTab() {
                                                         </SelectTrigger>
                                                         <SelectContent>
                                                           {available.length === 0
-                                                            ? <div className="px-3 py-2 text-xs text-muted-foreground">All faculty assigned</div>
+                                                            ? <div className="px-3 py-2 text-xs text-muted-foreground">No available {subjShort} faculty</div>
                                                             : available.map(u => <SelectItem key={u.id} value={String(u.id)}>{u.full_name}</SelectItem>)}
                                                         </SelectContent>
                                                       </Select>

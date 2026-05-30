@@ -38,7 +38,10 @@ def list_users(db: DbSession, skip: int = 0, limit: int = 100):
 
 @router.post("", response_model=UserOut, status_code=status.HTTP_201_CREATED, dependencies=[admin_only])
 def create_user_endpoint(data: UserCreate, db: DbSession):
-    return create_user(db, data)
+    try:
+        return create_user(db, data)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
 @router.get("/{user_id}", response_model=UserOut)
@@ -58,7 +61,10 @@ def update_user_endpoint(user_id: int, data: UserUpdate, db: DbSession):
     user = get_user(db, user_id)
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
-    return update_user(db, user, data)
+    try:
+        return update_user(db, user, data)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
 @router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[admin_only])

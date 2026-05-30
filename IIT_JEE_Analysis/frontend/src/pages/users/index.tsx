@@ -21,7 +21,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { toast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
-import type { Role, User } from "@/types";
+import type { Role, SubjectName, User } from "@/types";
 
 // ── Role colours ───────────────────────────────────────────────────────────────
 const ROLE_COLORS: Record<string, string> = {
@@ -32,6 +32,7 @@ const ROLE_COLORS: Record<string, string> = {
   Faculty:          "bg-emerald-100 text-emerald-700 border-emerald-200",
   Operator:         "bg-sky-100 text-sky-700 border-sky-200",
 };
+const SUBJECTS: SubjectName[] = ["Mathematics", "Physics", "Chemistry"];
 
 // ── Avatar helpers ─────────────────────────────────────────────────────────────
 function avatarSrc(url?: string | null) {
@@ -210,6 +211,7 @@ const baseSchema = z.object({
   phone:     z.string().optional(),
   whatsapp:  z.string().optional(),
   role_ids:  z.array(z.number()).min(1, "Select at least one role"),
+  faculty_subject: z.enum(["Mathematics", "Physics", "Chemistry"]).or(z.literal("")),
 });
 const createSchema = baseSchema.extend({ password: z.string().min(8, "Min 8 characters") });
 const editSchema   = baseSchema.extend({ password: z.string().min(8, "Min 8 characters").or(z.literal("")) });
@@ -222,10 +224,12 @@ function UserDialog({ open, onClose, editUser, roles }: {
   const qc = useQueryClient();
   const isEdit = !!editUser;
   const [selectedRoles, setSelectedRoles] = useState<number[]>([]);
+  const facultyRoleId = roles.find(r => r.name === "Faculty")?.id;
+  const isFacultySelected = facultyRoleId ? selectedRoles.includes(facultyRoleId) : false;
 
   const { register, handleSubmit, formState: { errors, isSubmitting }, reset, setValue } = useForm<FormData>({
     resolver: zodResolver(isEdit ? editSchema : createSchema),
-    defaultValues: { username: "", email: "", full_name: "", phone: "", whatsapp: "", password: "", role_ids: [] },
+    defaultValues: { username: "", email: "", full_name: "", phone: "", whatsapp: "", password: "", role_ids: [], faculty_subject: "" },
   });
 
   useEffect(() => {
@@ -240,6 +244,7 @@ function UserDialog({ open, onClose, editUser, roles }: {
         whatsapp: editUser?.whatsapp ?? "",
         password: "",
         role_ids: roleIds,
+        faculty_subject: editUser?.faculty_subjects?.[0] ?? "",
       });
     }
   }, [open, editUser, reset]);
@@ -248,16 +253,22 @@ function UserDialog({ open, onClose, editUser, roles }: {
     setSelectedRoles(prev => {
       const next = prev.includes(id) ? prev.filter(r => r !== id) : [...prev, id];
       setValue("role_ids", next, { shouldValidate: true });
+      if (id === facultyRoleId && prev.includes(id)) setValue("faculty_subject", "", { shouldValidate: true });
       return next;
     });
   };
 
   const mutation = useMutation({
     mutationFn: (data: FormData) => {
+      if (isFacultySelected && !data.faculty_subject) {
+        throw new Error("Faculty subject is required");
+      }
       const payload: Record<string, unknown> = {
         ...data, role_ids: selectedRoles,
         email: data.email || null, phone: data.phone || null, whatsapp: data.whatsapp || null,
+        faculty_subjects: isFacultySelected ? [data.faculty_subject] : [],
       };
+      delete payload.faculty_subject;
       if (isEdit && !data.password) delete payload.password;
       return isEdit ? updateUser(editUser!.id, payload) : createUser(payload);
     },
@@ -266,7 +277,7 @@ function UserDialog({ open, onClose, editUser, roles }: {
       toast({ title: isEdit ? "User updated" : "User created" });
       reset(); onClose();
     },
-    onError: () => toast({ title: "Could not save user.", variant: "destructive" }),
+    onError: (error: any) => toast({ title: error?.message || "Could not save user.", variant: "destructive" }),
   });
 
   return (
@@ -327,6 +338,26 @@ function UserDialog({ open, onClose, editUser, roles }: {
               ))}
             </div>
           </div>
+
+          {isFacultySelected && (
+            <div className="space-y-2">
+              <Label>Faculty Subject</Label>
+              <div className="flex flex-wrap gap-2">
+                {SUBJECTS.map(subject => (
+                  <label key={subject} className="inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-medium cursor-pointer hover:border-primary/40">
+                    <input
+                      type="radio"
+                      value={subject}
+                      {...register("faculty_subject")}
+                      className="h-3 w-3"
+                    />
+                    {subject}
+                  </label>
+                ))}
+              </div>
+              {errors.faculty_subject && <p className="text-xs text-destructive">Select the faculty subject</p>}
+            </div>
+          )}
 
           <DialogFooter>
             <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>

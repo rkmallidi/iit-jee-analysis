@@ -26,6 +26,7 @@ export interface User {
   is_active: boolean;
   created_at: string;
   roles: Role[];
+  faculty_subjects?: SubjectName[];
   theme_prefs?: Record<string, unknown>;
 }
 

@@ -73,8 +73,8 @@ class User(Base):
     user_roles: Mapped[List["UserRole"]] = relationship(
         "UserRole", back_populates="user", cascade="all, delete-orphan"
     )
-    faculty_subject: Mapped[Optional["FacultySubject"]] = relationship(
-        "FacultySubject", back_populates="faculty", uselist=False, cascade="all, delete-orphan"
+    faculty_subjects: Mapped[List["FacultySubject"]] = relationship(
+        "FacultySubject", back_populates="faculty", cascade="all, delete-orphan"
     )
     dean_branches: Mapped[List["DeanBranch"]] = relationship(
         "DeanBranch", back_populates="dean", cascade="all, delete-orphan"

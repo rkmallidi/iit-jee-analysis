@@ -49,7 +49,7 @@ class FacultySubject(Base):
         nullable=False,
     )
 
-    faculty: Mapped["User"] = relationship("User", back_populates="faculty_subject")  # type: ignore[name-defined]
+    faculty: Mapped["User"] = relationship("User", back_populates="faculty_subjects")  # type: ignore[name-defined]
 
 
 # ---------------------------------------------------------------------------
