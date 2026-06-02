@@ -115,7 +115,7 @@ export default function OMRUploadDialog({ exam, branchId, branchName, open, onOp
               <Upload className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
               <p className="text-sm font-medium mb-1">Select OMR file (CSV)</p>
               <p className="text-xs text-muted-foreground mb-4">
-                Format: x,admission_no,answer1,answer2,...
+                Format: x,OMR_ID,answer1,answer2,...
               </p>
               <input
                 type="file"

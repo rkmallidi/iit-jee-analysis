@@ -54,7 +54,7 @@ class ExamResultsDetail(BaseModel):
 
 class OMRValidationRecord(BaseModel):
     """A single student record from OMR file."""
-    admission_no: str
+    omr_id: str
     answers: list[int | str]  # int for SCQ/INT, str for MCQ ("2|4") or DECIMAL ("3.14")
 
 

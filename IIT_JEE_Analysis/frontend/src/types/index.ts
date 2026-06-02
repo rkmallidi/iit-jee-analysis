@@ -149,6 +149,7 @@ export interface StudentSection {
 export interface Student {
   id: number;
   admission_no: string;
+  omr_id: string;
   name: string;
   phone?: string;
   target_rank?: RankCategory | null;
@@ -220,7 +221,7 @@ export interface ExamQuestion {
 }
 
 export interface OMRValidationRecord {
-  admission_no: string;
+  omr_id: string;
   answers: (number | string)[];
 }
 

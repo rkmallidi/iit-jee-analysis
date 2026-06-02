@@ -1106,23 +1106,23 @@ def validate_omr_file(
             continue
 
         marker = parts[0]
-        admission_no = parts[1]
+        omr_id = parts[1]
 
         if marker != "x":
             errors.append(f"Row {line_num}: invalid marker '{marker}' (expected 'x')")
             continue
 
-        if not admission_no:
-            errors.append(f"Row {line_num}: empty admission number")
+        if not omr_id:
+            errors.append(f"Row {line_num}: empty OMR ID")
             continue
 
         # Check for duplicates
-        if admission_no in seen_ids:
-            duplicate_ids.add(admission_no)
-            errors.append(f"Row {line_num}: duplicate student ID '{admission_no}'")
+        if omr_id in seen_ids:
+            duplicate_ids.add(omr_id)
+            errors.append(f"Row {line_num}: duplicate OMR ID '{omr_id}'")
             continue
 
-        seen_ids.add(admission_no)
+        seen_ids.add(omr_id)
 
         # Parse answers using question type at each position
         answers_raw = [p for p in parts[2:] if p != ""]
@@ -1143,31 +1143,45 @@ def validate_omr_file(
                     converted = _normalise_answer_key(ans, "SCQ")
                     answers.append(int(converted))
         except ValueError:
-            errors.append(f"Row {line_num} ({admission_no}): invalid answer value '{ans}'")
-            invalid_student_ids.append(admission_no)
+            errors.append(f"Row {line_num} ({omr_id}): invalid answer value '{ans}'")
+            invalid_student_ids.append(omr_id)
             continue
 
-        records.append(OMRValidationRecord(admission_no=admission_no, answers=answers))
+        records.append(OMRValidationRecord(omr_id=omr_id, answers=answers))
 
     # Validate students exist and are enrolled in the specified branch
     if records:
-        admitted_nos = {r.admission_no for r in records}
+        submitted_omr_ids = {r.omr_id for r in records}
         enrolled_students = get_enrolled_students_for_exam(db, exam_id, branch_id=branch_id)
-        enrolled_map = {s.admission_no: s for s in enrolled_students}
+        enrolled_map: dict[str, Student] = {}
+        conflicting_omr_ids: set[str] = set()
+        for student in enrolled_students:
+            omr_id = student.admission_no[-7:]
+            if omr_id in conflicting_omr_ids:
+                continue
+            if omr_id in enrolled_map:
+                conflicting_omr_ids.add(omr_id)
+                enrolled_map.pop(omr_id, None)
+            else:
+                enrolled_map[omr_id] = student
+
+        for omr_id in sorted(conflicting_omr_ids):
+            invalid_student_ids.append(omr_id)
+            errors.append(f"OMR ID '{omr_id}' matches multiple enrolled students; admission numbers must have unique last 7 characters")
 
         for record in records:
-            if record.admission_no not in enrolled_map:
-                invalid_student_ids.append(record.admission_no)
-                errors.append(f"Student '{record.admission_no}' not enrolled in {exam.program.name} / {exam.class_.name}")
+            if record.omr_id not in enrolled_map:
+                invalid_student_ids.append(record.omr_id)
+                errors.append(f"OMR ID '{record.omr_id}' not enrolled in {exam.program.name} / {exam.class_.name}")
 
         # Find missing students
-        missing = set(enrolled_map.keys()) - admitted_nos
+        missing = set(enrolled_map.keys()) - submitted_omr_ids
         missing_list = sorted(list(missing))
     else:
         missing_list = []
 
     return OMRValidationSummary(
-        valid_count=len(records) - len(invalid_student_ids),
+        valid_count=len(records) - len(set(invalid_student_ids)),
         duplicate_ids=sorted(list(duplicate_ids)),
         invalid_student_ids=sorted(list(set(invalid_student_ids))),
         missing_students=missing_list,
@@ -1194,23 +1208,36 @@ def save_omr_results(exam_id: int, data: OMRUploadConfirm, db: DbSession):
         raise HTTPException(400, "Exam ID mismatch")
 
     enrolled_students = get_enrolled_students_for_exam(db, exam_id, branch_id=data.branch_id)
-    enrolled_map = {s.admission_no: s for s in enrolled_students}
+    enrolled_map: dict[str, Student] = {}
+    conflicting_omr_ids: set[str] = set()
+    for student in enrolled_students:
+        omr_id = student.admission_no[-7:]
+        if omr_id in conflicting_omr_ids:
+            continue
+        if omr_id in enrolled_map:
+            conflicting_omr_ids.add(omr_id)
+            enrolled_map.pop(omr_id, None)
+        else:
+            enrolled_map[omr_id] = student
 
     # ── Save valid records, skip invalid ones ─────────────────────────────
     errors: list[str] = []
     saved = 0
 
     for record in data.records:
-        if record.admission_no not in enrolled_map:
-            errors.append(f"Student '{record.admission_no}' not found in enrolled list")
+        if record.omr_id in conflicting_omr_ids:
+            errors.append(f"OMR ID '{record.omr_id}' matches multiple enrolled students")
             continue
-        student = enrolled_map[record.admission_no]
+        if record.omr_id not in enrolled_map:
+            errors.append(f"OMR ID '{record.omr_id}' not found in enrolled list")
+            continue
+        student = enrolled_map[record.omr_id]
         answers_str = ",".join(str(a) for a in record.answers)
         try:
             upsert_exam_result(db, exam_id, student.id, answers_str)
             saved += 1
         except Exception as exc:
-            errors.append(f"Failed to save '{record.admission_no}': {exc}")
+            errors.append(f"Failed to save '{record.omr_id}': {exc}")
 
     # Upsert upload log (per exam + branch)
     log = db.scalar(

@@ -149,10 +149,12 @@ function UploadResultDialog({ result, onClose }: { result: UploadResult; onClose
 }
 
 // ── Types ──────────────────────────────────────────────────────────────────────
-type SortField = "name" | "admission_no" | "is_active";
+type SortField = "name" | "admission_no" | "omr_id" | "is_active";
 type SortDir   = "asc" | "desc";
 
 const PAGE_SIZE_OPTIONS = [10, 25, 50, 100];
+
+const getOmrId = (student: Student) => student.omr_id || student.admission_no.slice(-7);
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function StudentsPage() {
@@ -192,7 +194,7 @@ export default function StudentsPage() {
   const filtered = students.filter(s => {
     if (!search) return true;
     const q = search.toLowerCase();
-    return s.admission_no.toLowerCase().includes(q) || s.name.toLowerCase().includes(q) || (s.phone ?? "").includes(q);
+    return s.admission_no.toLowerCase().includes(q) || getOmrId(s).toLowerCase().includes(q) || s.name.toLowerCase().includes(q) || (s.phone ?? "").includes(q);
   });
 
   const sorted = [...filtered].sort((a, b) => {
@@ -201,8 +203,8 @@ export default function StudentsPage() {
       const diff = (b.is_active ? 1 : 0) - (a.is_active ? 1 : 0);
       return sortDir === "asc" ? diff : -diff;
     }
-    const valA = a[sortField].toLowerCase();
-    const valB = b[sortField].toLowerCase();
+    const valA = sortField === "omr_id" ? getOmrId(a).toLowerCase() : a[sortField].toLowerCase();
+    const valB = sortField === "omr_id" ? getOmrId(b).toLowerCase() : b[sortField].toLowerCase();
     return sortDir === "asc" ? valA.localeCompare(valB) : valB.localeCompare(valA);
   });
 
@@ -298,6 +300,7 @@ export default function StudentsPage() {
   const handleExportExcel = () => {
     const rows = filtered.map(s => ({
       "Admission No":  s.admission_no,
+      "OMR ID":        getOmrId(s),
       "Name":          s.name,
       "Phone":         s.phone ?? "",
       "Target Rank":   s.target_rank ?? "",
@@ -308,7 +311,7 @@ export default function StudentsPage() {
     const ws = XLSX.utils.json_to_sheet(rows);
     // Column widths
     ws["!cols"] = [
-      { wch: 16 }, { wch: 30 }, { wch: 16 }, { wch: 16 }, { wch: 10 }, { wch: 10 }, { wch: 14 },
+      { wch: 16 }, { wch: 12 }, { wch: 30 }, { wch: 16 }, { wch: 16 }, { wch: 10 }, { wch: 10 }, { wch: 14 },
     ];
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Students");
@@ -351,7 +354,7 @@ export default function StudentsPage() {
       <div className="relative max-w-sm">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
         <Input
-          placeholder="Search name, admission no, or phone…"
+          placeholder="Search name, admission no, OMR ID, or phone…"
           value={search}
           onChange={e => setSearch(e.target.value)}
           className="pl-9"
@@ -391,6 +394,15 @@ export default function StudentsPage() {
                           Adm. No <SortIcon field="admission_no" />
                         </button>
                       </th>
+                      {/* Sortable: OMR ID */}
+                      <th className="text-left px-4 py-3 font-semibold text-muted-foreground whitespace-nowrap">
+                        <button
+                          className="inline-flex items-center hover:text-foreground transition-colors"
+                          onClick={() => toggleSort("omr_id")}
+                        >
+                          OMR ID <SortIcon field="omr_id" />
+                        </button>
+                      </th>
                       {/* Sortable: Name */}
                       <th className="text-left px-4 py-3 font-semibold text-muted-foreground">
                         <button
@@ -418,6 +430,11 @@ export default function StudentsPage() {
                         <td className="px-5 py-3">
                           <code className="text-xs font-mono font-semibold bg-muted px-2 py-0.5 rounded">
                             {s.admission_no}
+                          </code>
+                        </td>
+                        <td className="px-4 py-3">
+                          <code className="text-xs font-mono font-semibold bg-muted/70 px-2 py-0.5 rounded">
+                            {getOmrId(s)}
                           </code>
                         </td>
                         <td className="px-4 py-3 font-medium">{s.name}</td>

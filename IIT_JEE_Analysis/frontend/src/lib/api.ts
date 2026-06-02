@@ -35,6 +35,21 @@ export const getRoles = () => request("/users/roles");
 export const createUser = (data: any) => request("/users", { method: "POST", body: JSON.stringify(data) });
 export const updateUser = (id: number, data: any) => request(`/users/${id}`, { method: "PATCH", body: JSON.stringify(data) });
 export const deleteUser = (id: number) => request(`/users/${id}`, { method: "DELETE" });
+export const downloadUsersTemplate = () =>
+  fetch(`${BASE}/users/upload/template`, { headers: authHeaders(), credentials: "include" }).then(async r => ({ data: await r.blob() }));
+export const uploadUsersExcel = (file: File) => {
+  const formData = new FormData();
+  formData.append("file", file);
+  return fetch(`${BASE}/users/upload/excel`, {
+    method: "POST",
+    headers: authHeaders(),
+    body: formData,
+    credentials: "include",
+  }).then(async r => {
+    if (!r.ok) throw await r.json().catch(() => ({ detail: "Upload failed" }));
+    return { data: await r.json() };
+  });
+};
 export const uploadUserAvatar = (id: number, file: File) => {
   const formData = new FormData();
   formData.append("file", file);

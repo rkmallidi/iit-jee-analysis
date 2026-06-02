@@ -177,7 +177,7 @@ export default function AcademicYearsPage() {
               <p className="text-sm text-muted-foreground/60 mt-1">Create the first year to get started.</p>
             </div>
           ) : (
-            <table className="w-full text-sm">
+            <table className="w-full border-collapse border-spacing-0 text-sm">
               <thead>
                 <tr className="border-b bg-muted/30">
                   <th className="text-left px-5 py-3 font-semibold text-muted-foreground">Year</th>

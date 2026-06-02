@@ -62,6 +62,7 @@ export default function MappingsPage() {
           <h2 className="text-xl font-bold">Branch Configuration</h2>
           <p className="text-sm text-muted-foreground">Configure branch programs, section slots, and faculty assignments.</p>
         </div>
+        <div className="flex flex-wrap items-center justify-end gap-2">
         <Select
           value={selectedYear ? String(selectedYear.id) : ""}
           onValueChange={v => {
@@ -69,32 +70,32 @@ export default function MappingsPage() {
             if (yr) setSelectedYear(yr);
           }}
         >
-          <SelectTrigger className="w-36 h-9">
+          <SelectTrigger className="h-10 w-[140px]">
             <SelectValue placeholder="Select year" />
           </SelectTrigger>
           <SelectContent>
             {years.map(y => (
               <SelectItem key={y.id} value={String(y.id)}>
-                {y.name}{y.is_current ? " ★" : ""}
+                {y.name}{y.is_current ? " *" : ""}
               </SelectItem>
             ))}
           </SelectContent>
         </Select>
-      </div>
-
-      <div className="flex gap-1 p-1 bg-muted rounded-xl w-fit">
-        {TABS.map(({ id, label, icon: Icon }) => (
-          <button
-            key={id}
-            onClick={() => setActiveTab(id)}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-              activeTab === id ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            <Icon className="h-4 w-4" />
-            {label}
-          </button>
-        ))}
+          <div className="flex gap-1 p-1 bg-muted rounded-lg">
+            {TABS.map(({ id, label, icon: Icon }) => (
+              <button
+                key={id}
+                onClick={() => setActiveTab(id)}
+                className={`flex h-9 items-center gap-2 rounded-md px-3 text-sm font-medium transition-all ${
+                  activeTab === id ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                <Icon className="h-4 w-4" />
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
 
       {activeTab === "dashboard" && <BranchDashboardTab />}
@@ -391,8 +392,8 @@ function BranchDashboardTab() {
               {/* Header */}
               <button className="w-full text-left" onClick={() => toggleExpand(branch.id)}>
                 <div className="flex items-center gap-3 px-4 py-2.5 hover:bg-muted/20 transition-colors">
-                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary font-bold text-[11px]">
-                    {branch.code}
+                  <div className="inline-flex h-8 max-w-[96px] shrink-0 items-center justify-center rounded-md bg-primary/10 px-2 text-primary font-bold text-[11px]">
+                    <span className="truncate">{branch.code}</span>
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-1.5">
@@ -467,16 +468,16 @@ function BranchDashboardTab() {
               {/* Expanded body */}
               {isExpanded && (
                 <div className="border-t">
-                  {/* Dean / Principal row */}
-                  <div className="flex flex-wrap gap-x-4 gap-y-1.5 items-center px-4 py-2 bg-muted/10 border-b">
-                    <div className="flex items-center gap-1.5 flex-wrap">
-                      <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide w-12">Dean</span>
+                  {/* Role assignment row */}
+                  <div className="flex flex-wrap items-center gap-3 px-4 py-2 bg-muted/10 border-b">
+                    <div className="inline-flex items-center gap-1.5 min-w-0 whitespace-nowrap">
+                      <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide shrink-0">Dean</span>
                       {branchDeans.map(d => {
                         const u = userById.get(d.user_id);
                         const name = u?.full_name ?? `#${d.user_id}`;
                         return (
-                          <span key={d.id} className="inline-flex items-center gap-1 rounded-full bg-violet-100 text-violet-700 border border-violet-200 px-2 py-0 text-[11px] font-medium">
-                            {name}
+                          <span key={d.id} className="inline-flex max-w-[170px] items-center gap-1 rounded-full bg-violet-100 text-violet-700 border border-violet-200 px-2 py-0 text-[11px] font-medium">
+                            <span className="truncate">{name}</span>
                             <button onClick={e => { e.stopPropagation(); setPendingAction({ fn: () => removeDean.mutate(d.id), title: `Remove Dean`, description: `Remove "${name}" as Dean from this branch?` }); }} className="ml-0.5 hover:text-red-600">
                               <X className="h-2.5 w-2.5" />
                             </button>
@@ -485,21 +486,20 @@ function BranchDashboardTab() {
                       })}
                       {availableDeans.length > 0 && (
                         <Select value={addingDean[branch.id] ?? ""} onValueChange={v => { setAddingDean(p => ({ ...p, [branch.id]: v })); assignDean.mutate({ userId: +v, branchId: branch.id }); }}>
-                          <SelectTrigger className="h-5 w-28 text-[11px] border-dashed"><SelectValue placeholder="+ Dean" /></SelectTrigger>
+                          <SelectTrigger className="h-6 w-auto min-w-[84px] px-2 text-xs border-dashed text-muted-foreground gap-0.5 [&>svg]:hidden"><SelectValue placeholder="+ Add" /></SelectTrigger>
                           <SelectContent>{availableDeans.map(u => <SelectItem key={u.id} value={String(u.id)}>{u.full_name}</SelectItem>)}</SelectContent>
                         </Select>
                       )}
                       {branchDeans.length === 0 && availableDeans.length === 0 && <span className="text-[11px] text-muted-foreground italic">None</span>}
                     </div>
-                    <div className="hidden sm:block w-px h-4 bg-border" />
-                    <div className="flex items-center gap-1.5 flex-wrap">
-                      <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide w-14">Principal</span>
+                    <div className="inline-flex items-center gap-1.5 min-w-0 whitespace-nowrap">
+                      <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide shrink-0">Principal</span>
                       {branchPrincipals.map(p => {
                         const u = userById.get(p.user_id);
                         const name = u?.full_name ?? `#${p.user_id}`;
                         return (
-                          <span key={p.id} className="inline-flex items-center gap-1 rounded-full bg-amber-100 text-amber-700 border border-amber-200 px-2 py-0 text-[11px] font-medium">
-                            {name}
+                          <span key={p.id} className="inline-flex max-w-[170px] items-center gap-1 rounded-full bg-amber-100 text-amber-700 border border-amber-200 px-2 py-0 text-[11px] font-medium">
+                            <span className="truncate">{name}</span>
                             <button onClick={e => { e.stopPropagation(); setPendingAction({ fn: () => removePrincipal.mutate(p.id), title: `Remove Principal`, description: `Remove "${name}" as Principal from this branch?` }); }} className="ml-0.5 hover:text-red-600">
                               <X className="h-2.5 w-2.5" />
                             </button>
@@ -508,21 +508,20 @@ function BranchDashboardTab() {
                       })}
                       {availablePrincipals.length > 0 && (
                         <Select value={addingPrincipal[branch.id] ?? ""} onValueChange={v => { setAddingPrincipal(p => ({ ...p, [branch.id]: v })); assignPrincipal.mutate({ userId: +v, branchId: branch.id }); }}>
-                          <SelectTrigger className="h-5 w-32 text-[11px] border-dashed"><SelectValue placeholder="+ Principal" /></SelectTrigger>
+                          <SelectTrigger className="h-6 w-auto min-w-[84px] px-2 text-xs border-dashed text-muted-foreground gap-0.5 [&>svg]:hidden"><SelectValue placeholder="+ Add" /></SelectTrigger>
                           <SelectContent>{availablePrincipals.map(u => <SelectItem key={u.id} value={String(u.id)}>{u.full_name}</SelectItem>)}</SelectContent>
                         </Select>
                       )}
                       {branchPrincipals.length === 0 && availablePrincipals.length === 0 && <span className="text-[11px] text-muted-foreground italic">None</span>}
                     </div>
-                    <div className="hidden sm:block w-px h-4 bg-border" />
-                    <div className="flex items-center gap-1.5 flex-wrap">
-                      <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide w-16">V.Principal</span>
+                    <div className="inline-flex items-center gap-1.5 min-w-0 whitespace-nowrap">
+                      <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide shrink-0">V.Principal</span>
                       {branchVicePrincipals.map(v => {
                         const u = userById.get(v.user_id);
                         const name = u?.full_name ?? `#${v.user_id}`;
                         return (
-                          <span key={v.id} className="inline-flex items-center gap-1 rounded-full bg-orange-100 text-orange-700 border border-orange-200 px-2 py-0 text-[11px] font-medium">
-                            {name}
+                          <span key={v.id} className="inline-flex max-w-[170px] items-center gap-1 rounded-full bg-orange-100 text-orange-700 border border-orange-200 px-2 py-0 text-[11px] font-medium">
+                            <span className="truncate">{name}</span>
                             <button onClick={e => { e.stopPropagation(); setPendingAction({ fn: () => removeVicePrincipal.mutate(v.id), title: `Remove Vice-Principal`, description: `Remove "${name}" as Vice-Principal from this branch?` }); }} className="ml-0.5 hover:text-red-600">
                               <X className="h-2.5 w-2.5" />
                             </button>
@@ -531,21 +530,20 @@ function BranchDashboardTab() {
                       })}
                       {vicePrincipals.filter(u => !new Set(branchVicePrincipals.map(v => v.user_id)).has(u.id)).length > 0 && (
                         <Select value={addingVicePrincipal[branch.id] ?? ""} onValueChange={v => { setAddingVicePrincipal(p => ({ ...p, [branch.id]: v })); assignVicePrincipal.mutate({ userId: +v, branchId: branch.id }); }}>
-                          <SelectTrigger className="h-5 w-36 text-[11px] border-dashed"><SelectValue placeholder="+ V.Principal" /></SelectTrigger>
+                          <SelectTrigger className="h-6 w-auto min-w-[84px] px-2 text-xs border-dashed text-muted-foreground gap-0.5 [&>svg]:hidden"><SelectValue placeholder="+ Add" /></SelectTrigger>
                           <SelectContent>{vicePrincipals.filter(u => !new Set(branchVicePrincipals.map(v => v.user_id)).has(u.id)).map(u => <SelectItem key={u.id} value={String(u.id)}>{u.full_name}</SelectItem>)}</SelectContent>
                         </Select>
                       )}
                       {branchVicePrincipals.length === 0 && vicePrincipals.filter(u => !new Set(branchVicePrincipals.map(v => v.user_id)).has(u.id)).length === 0 && <span className="text-[11px] text-muted-foreground italic">None</span>}
                     </div>
-                    <div className="hidden sm:block w-px h-4 bg-border" />
-                    <div className="flex items-center gap-1.5 flex-wrap">
-                      <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide w-12">Operator</span>
+                    <div className="inline-flex items-center gap-1.5 min-w-0 whitespace-nowrap">
+                      <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide shrink-0">Operator</span>
                       {branchOperators.map(o => {
                         const u = userById.get(o.user_id);
                         const name = u?.full_name ?? `#${o.user_id}`;
                         return (
-                          <span key={o.id} className="inline-flex items-center gap-1 rounded-full bg-cyan-100 text-cyan-700 border border-cyan-200 px-2 py-0 text-[11px] font-medium">
-                            {name}
+                          <span key={o.id} className="inline-flex max-w-[170px] items-center gap-1 rounded-full bg-cyan-100 text-cyan-700 border border-cyan-200 px-2 py-0 text-[11px] font-medium">
+                            <span className="truncate">{name}</span>
                             <button onClick={e => { e.stopPropagation(); setPendingAction({ fn: () => removeOperator.mutate(o.id), title: `Remove Operator`, description: `Remove "${name}" as Operator from this branch?` }); }} className="ml-0.5 hover:text-red-600">
                               <X className="h-2.5 w-2.5" />
                             </button>
@@ -554,7 +552,7 @@ function BranchDashboardTab() {
                       })}
                       {operators.filter(u => !new Set(branchOperators.map(o => o.user_id)).has(u.id)).length > 0 && (
                         <Select value={addingOperator[branch.id] ?? ""} onValueChange={v => { setAddingOperator(p => ({ ...p, [branch.id]: v })); assignOperator.mutate({ userId: +v, branchId: branch.id }); }}>
-                          <SelectTrigger className="h-5 w-28 text-[11px] border-dashed"><SelectValue placeholder="+ Operator" /></SelectTrigger>
+                          <SelectTrigger className="h-6 w-auto min-w-[84px] px-2 text-xs border-dashed text-muted-foreground gap-0.5 [&>svg]:hidden"><SelectValue placeholder="+ Add" /></SelectTrigger>
                           <SelectContent>{operators.filter(u => !new Set(branchOperators.map(o => o.user_id)).has(u.id)).map(u => <SelectItem key={u.id} value={String(u.id)}>{u.full_name}</SelectItem>)}</SelectContent>
                         </Select>
                       )}
@@ -563,13 +561,14 @@ function BranchDashboardTab() {
                   </div>
 
                   {/* Programs */}
-                  <div className="flex items-center gap-1.5 flex-wrap px-4 py-1.5 bg-muted/5 border-b">
-                    <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide shrink-0">Programs</span>
+                  <div className="px-4 py-1.5 bg-muted/5 border-b">
+                    <div className="inline-flex items-center gap-1.5 min-w-0 whitespace-nowrap">
+                      <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide shrink-0">Programs</span>
                     {assignedBranchPrograms.map(bp => {
                       const prog = programs.find(p => p.id === bp.program_id);
                       return (
-                        <span key={bp.id} className="inline-flex items-center gap-1 rounded-full bg-blue-100 text-blue-700 border border-blue-200 px-2 py-0 text-[11px] font-medium">
-                          {prog?.name ?? `#${bp.program_id}`}
+                        <span key={bp.id} className="inline-flex max-w-[170px] items-center gap-1 rounded-full bg-blue-100 text-blue-700 border border-blue-200 px-2 py-0 text-[11px] font-medium">
+                          <span className="truncate">{prog?.name ?? `#${bp.program_id}`}</span>
                           <button onClick={e => { e.stopPropagation(); setPendingAction({ fn: () => dropBranchProgram.mutate(bp.id), title: "Remove Program", description: `Remove "${prog?.name}" from this branch for ${selectedYear?.name}?` }); }} className="ml-0.5 hover:text-red-600">
                             <X className="h-2.5 w-2.5" />
                           </button>
@@ -578,11 +577,12 @@ function BranchDashboardTab() {
                     })}
                     {availablePrograms.length > 0 && yearId && (
                       <Select value="" onValueChange={v => addBranchProgram.mutate({ branchId: branch.id, programId: +v })}>
-                        <SelectTrigger className="h-5 w-32 text-[11px] border-dashed"><SelectValue placeholder="+ Program" /></SelectTrigger>
+                        <SelectTrigger className="h-6 w-auto min-w-[84px] px-2 text-xs border-dashed text-muted-foreground gap-0.5 [&>svg]:hidden"><SelectValue placeholder="+ Add" /></SelectTrigger>
                         <SelectContent>{availablePrograms.map(p => <SelectItem key={p.id} value={String(p.id)}>{p.name}</SelectItem>)}</SelectContent>
                       </Select>
                     )}
                     {assignedBranchPrograms.length === 0 && <span className="text-[11px] text-muted-foreground italic">None for {selectedYear?.name ?? "this year"}</span>}
+                    </div>
                   </div>
 
                   {/* Section slots */}
@@ -678,22 +678,28 @@ function BranchDashboardTab() {
                                                   ? "bg-purple-200"
                                                   : "bg-green-200";
                                                 return (
-                                                  <div key={subj} className="flex items-center gap-1.5 px-2.5 py-2 flex-wrap">
+                                                  <div key={subj} className="flex items-center gap-2 px-2.5 py-1.5">
                                                     {/* Subject label + status dot */}
-                                                    <div className="flex items-center gap-1.5 shrink-0">
+                                                    <div className="flex items-center gap-1.5 shrink-0 min-w-[66px]">
                                                       <div className={`h-2 w-2 rounded-full shrink-0 ${hasAny ? "bg-emerald-400" : "bg-amber-300"}`} />
                                                       <span className={`text-xs font-semibold ${subjColor}`}>{subjShort}</span>
                                                     </div>
                                                     {/* Faculty chips */}
-                                                    <div className="flex flex-wrap items-center gap-1 flex-1 min-w-0">
+                                                    <div className="ml-auto flex items-center justify-end gap-1 flex-1 min-w-0">
+                                                      {subjFms.length > 1 && (
+                                                        <span className={`inline-flex items-center rounded-full border px-1.5 py-0 text-[10px] font-semibold ${chipCls}`}>
+                                                          {subjFms.length}
+                                                        </span>
+                                                      )}
                                                       {subjFms.map(fm => {
                                                         const u = userById.get(fm.user_id);
+                                                        const chipWidth = subjFms.length >= 2 ? "max-w-[110px]" : "max-w-[150px]";
                                                         return (
-                                                          <span key={fm.id} className={`group/chip inline-flex items-center gap-1 rounded-full border text-xs font-medium px-2 py-0.5 ${chipCls}`}>
+                                                          <span key={fm.id} className={`group/chip inline-flex items-center gap-1 rounded-full border text-[11px] font-medium px-2 py-0.5 ${chipCls} ${chipWidth}`}>
                                                             <span className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[9px] font-bold ${avatarCls}`}>
                                                               {(u?.full_name ?? "?").slice(0, 2).toUpperCase()}
                                                             </span>
-                                                            <span className="max-w-[80px] truncate">{u?.full_name ?? `#${fm.user_id}`}</span>
+                                                            <span className="truncate">{u?.full_name ?? `#${fm.user_id}`}</span>
                                                             <button
                                                               onClick={() => setPendingAction({ fn: () => removeFaculty.mutate(fm.id), title: "Remove Faculty", description: `Remove ${u?.full_name ?? "this faculty"} from ${subj}?` })}
                                                               className="opacity-0 group-hover/chip:opacity-100 hover:text-red-500 transition-opacity shrink-0"
@@ -705,7 +711,7 @@ function BranchDashboardTab() {
                                                       })}
                                                       {/* + Add dropdown */}
                                                       <Select onValueChange={v => assignFaculty.mutate({ userId: +v, bsId: bs.id, subject: subj })}>
-                                                        <SelectTrigger className="h-6 w-auto px-2 text-xs border-dashed text-muted-foreground gap-0.5 [&>svg]:hidden">
+                                                        <SelectTrigger className="h-6 w-[84px] px-2 text-xs border-dashed text-muted-foreground gap-0.5 [&>svg]:hidden">
                                                           <span className="text-primary/60 font-semibold">+ Add</span>
                                                         </SelectTrigger>
                                                         <SelectContent>
@@ -736,13 +742,13 @@ function BranchDashboardTab() {
                   {/* Add slot form */}
                   <div className="border-t px-4 py-2 bg-muted/10">
                     <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">Add Section Slot</p>
-                    <div className="flex gap-1.5 flex-wrap items-center">
+                    <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1.3fr)_minmax(0,0.9fr)_minmax(0,0.9fr)_auto] gap-1.5 items-center">
                       <Select
                         value={slotForm.programId}
                         onValueChange={v => setAddingSlot(p => ({ ...p, [branch.id]: { ...slotForm, programId: v } }))}
                         disabled={slotPrograms.length === 0}
                       >
-                        <SelectTrigger className="h-7 w-36 text-xs">
+                        <SelectTrigger className="h-8 w-full text-xs">
                           <SelectValue placeholder={slotPrograms.length === 0 ? "Assign program first" : "Program"} />
                         </SelectTrigger>
                         <SelectContent>{slotPrograms.map(p => <SelectItem key={p.id} value={String(p.id)}>{p.name}</SelectItem>)}</SelectContent>
@@ -751,19 +757,19 @@ function BranchDashboardTab() {
                         value={slotForm.classId}
                         onValueChange={v => setAddingSlot(p => ({ ...p, [branch.id]: { ...slotForm, classId: v } }))}
                       >
-                        <SelectTrigger className="h-7 w-28 text-xs"><SelectValue placeholder="Class" /></SelectTrigger>
+                        <SelectTrigger className="h-8 w-full text-xs"><SelectValue placeholder="Class" /></SelectTrigger>
                         <SelectContent>{classes.map(c => <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>)}</SelectContent>
                       </Select>
                       <Select
                         value={slotForm.sectionId}
                         onValueChange={v => setAddingSlot(p => ({ ...p, [branch.id]: { ...slotForm, sectionId: v } }))}
                       >
-                        <SelectTrigger className="h-7 w-28 text-xs"><SelectValue placeholder="Section" /></SelectTrigger>
+                        <SelectTrigger className="h-8 w-full text-xs"><SelectValue placeholder="Section" /></SelectTrigger>
                         <SelectContent>{sections.map(s => <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>)}</SelectContent>
                       </Select>
                       <Button
                         size="sm"
-                        className="h-8 text-xs"
+                        className="h-8 text-xs md:px-3"
                         disabled={!slotForm.programId || !slotForm.classId || !slotForm.sectionId || createSlot.isPending}
                         onClick={() => createSlot.mutate(branch.id)}
                       >
@@ -966,34 +972,34 @@ function OverviewTab() {
 
   return (
     <div className="space-y-6">
-      <div className="rounded-xl border bg-card p-5">
-        <div className="flex items-center justify-between mb-3">
+      <div className="rounded-lg border bg-card p-3">
+        <div className="flex items-center justify-between gap-3 mb-2">
           <p className="text-sm font-semibold">View Mapping Overview</p>
           {selectedYear && (
             <span className="text-xs font-medium text-primary bg-primary/10 rounded px-2 py-0.5">{selectedYear.name}</span>
           )}
         </div>
-        <div className="flex gap-3 flex-wrap items-center">
-          <div className="flex rounded-lg border overflow-hidden">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex shrink-0 rounded-md border overflow-hidden">
             {(["faculty", "program", "branch"] as const).map(m => (
               <button
                 key={m}
                 onClick={() => { setMode(m); setSelectedId(""); setData(null); }}
-                className={`px-4 py-2 text-sm font-medium capitalize transition-colors ${mode === m ? "bg-primary text-primary-foreground" : "hover:bg-muted"}`}
+                className={`h-9 px-3 text-sm font-medium capitalize transition-colors ${mode === m ? "bg-primary text-primary-foreground" : "hover:bg-muted"}`}
               >
                 {m}
               </button>
             ))}
           </div>
           <Select value={selectedId} onValueChange={setSelectedId}>
-            <SelectTrigger className="w-52"><SelectValue placeholder={`Select ${mode}`} /></SelectTrigger>
+            <SelectTrigger className="h-9 min-w-[220px] flex-1"><SelectValue placeholder={`Select ${mode}`} /></SelectTrigger>
             <SelectContent>
               {options.map((o: any) => (
                 <SelectItem key={o.id} value={String(o.id)}>{o.full_name || o.name}</SelectItem>
               ))}
             </SelectContent>
           </Select>
-          <Button onClick={load} disabled={!selectedId || loading}>
+          <Button className="h-9 px-4" onClick={load} disabled={!selectedId || loading}>
             {loading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Eye className="h-4 w-4 mr-2" />}
             View
           </Button>
@@ -1094,11 +1100,11 @@ function OverviewTab() {
 
           {mode === "branch" && (
             <>
-              <div className="flex items-center gap-3">
-                <div className="h-10 w-10 rounded-lg bg-primary/10 text-primary flex items-center justify-center font-bold text-sm shrink-0">
+              <div className="flex items-start gap-3 flex-wrap sm:flex-nowrap">
+                <div className="inline-flex min-h-10 max-w-full shrink-0 items-center justify-center rounded-md bg-primary/10 px-2.5 py-1 text-xs font-bold text-primary leading-none whitespace-nowrap">
                   {data.branch?.code}
                 </div>
-                <div>
+                <div className="min-w-0 flex-1 pt-1">
                   <p className="font-semibold text-lg leading-tight">{data.branch?.name}</p>
                   {data.branch?.address && <p className="text-xs text-muted-foreground">{data.branch?.address}</p>}
                 </div>

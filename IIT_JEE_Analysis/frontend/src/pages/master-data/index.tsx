@@ -156,33 +156,30 @@ function AcademicYearsTab() {
               <p className="font-medium text-muted-foreground">No academic years yet</p>
             </div>
           ) : (
-            <table className="w-full text-sm">
+            <table className="w-full border-collapse border-spacing-0 text-sm">
               <thead>
                 <tr className="border-b bg-muted/30">
-                  <th className="text-left px-5 py-3 font-semibold text-muted-foreground">Year</th>
+                  <th className="text-left pl-0 pr-4 py-3 font-semibold text-muted-foreground">Year</th>
                   <th className="text-left px-4 py-3 font-semibold text-muted-foreground">Start</th>
                   <th className="text-left px-4 py-3 font-semibold text-muted-foreground">End</th>
                   <th className="text-left px-4 py-3 font-semibold text-muted-foreground">Status</th>
-                  <th className="text-right px-5 py-3 font-semibold text-muted-foreground">Actions</th>
+                  <th className="text-right pl-4 pr-0 py-3 font-semibold text-muted-foreground">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y">
                 {years.map(y => (
                   <tr key={y.id} className="hover:bg-muted/20 transition-colors">
-                    <td className="px-5 py-3">
-                      <div className="flex items-center gap-2">
-                        <CalendarDays className="h-4 w-4 text-muted-foreground" />
-                        <span className="font-semibold">{y.name}</span>
-                      </div>
+                    <td className="pl-0 pr-4 py-3">
+                      <span className="font-semibold">{y.name}</span>
                     </td>
                     <td className="px-4 py-3 text-muted-foreground">{y.start_date}</td>
                     <td className="px-4 py-3 text-muted-foreground">{y.end_date}</td>
                     <td className="px-4 py-3">
                       {y.is_current
-                        ? <Badge className="bg-primary/10 text-primary border-primary/20 font-medium"><CheckCircle2 className="h-3 w-3 mr-1" /> Current</Badge>
+                        ? <Badge variant="success" className="font-medium"><CheckCircle2 className="h-3 w-3 mr-1" /> Current</Badge>
                         : <Badge variant="outline" className="text-muted-foreground">Inactive</Badge>}
                     </td>
-                    <td className="px-5 py-3 text-right">
+                    <td className="pl-4 pr-0 py-3 text-right">
                       <div className="flex items-center justify-end gap-1">
                         {!y.is_current && (
                           <Button variant="ghost" size="sm" className="h-8 text-xs gap-1.5"
@@ -294,7 +291,7 @@ function BranchesTab() {
   return (
     <>
       <EntityPage
-        title="" subtitle={`${items.length} branches configured`}
+        title="Branches" subtitle={`${items.length} branches configured`}
         items={items} isLoading={isLoading}
         onAdd={() => { setEditItem(null); setOpen(true); }}
         onEdit={b => { setEditItem(b); setOpen(true); }}
@@ -382,7 +379,7 @@ function ProgramsTab() {
   });
   return (
     <EntityPage
-      title="" subtitle={`${items.length} programs`}
+      title="Programs" subtitle={`${items.length} programs`}
       items={items} isLoading={isLoading}
       onAdd={() => { setEditItem(null); setOpen(true); }}
       onEdit={p => { setEditItem(p); setOpen(true); }}
@@ -458,7 +455,7 @@ function ClassesTab() {
   });
   return (
     <EntityPage
-      title="" subtitle={`${items.length} class levels`}
+      title="Classes" subtitle={`${items.length} class levels`}
       items={items} isLoading={isLoading}
       onAdd={() => { setEditItem(null); setOpen(true); }}
       onEdit={c => { setEditItem(c); setOpen(true); }}
@@ -532,7 +529,7 @@ function SectionsTab() {
   });
   return (
     <EntityPage
-      title="" subtitle={`${items.length} sections`}
+      title="Sections" subtitle={`${items.length} sections`}
       items={items} isLoading={isLoading}
       onAdd={() => { setEditItem(null); setOpen(true); }}
       onEdit={s => { setEditItem(s); setOpen(true); }}

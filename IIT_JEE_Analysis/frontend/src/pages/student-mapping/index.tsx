@@ -4,7 +4,9 @@ import { useAcademicYearStore } from "@/store/academicYear";
 import * as XLSX from "xlsx";
 import {
   Download, FileSpreadsheet, Loader2, AlertCircle, CheckCircle2,
-  ChevronRight, Search, X, Edit, Save, Plus, Star,
+  ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight,
+  ArrowDown, ArrowUp, ArrowUpDown,
+  Search, X, Pencil, Save, Plus, Star,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -493,6 +495,9 @@ function UploadResultDialog({ result, onClose }: { result: UploadResult; onClose
 }
 
 // ── Main page ─────────────────────────────────────────────────────────────────
+type SortField = "admission_no" | "name" | "phone" | "target_rank" | "section_assignment" | "is_active";
+type SortDir = "asc" | "desc";
+
 export default function StudentMappingPage() {
   const qc = useQueryClient();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -503,11 +508,15 @@ export default function StudentMappingPage() {
   const [filterBranchId, setFilterBranchId] = useState<string>("__all__");
   const [filterProgramId, setFilterProgramId] = useState<string>("__all__");
   const [filterClassId, setFilterClassId] = useState<string>("__all__");
+  const [sortField, setSortField] = useState<SortField>("admission_no");
+  const [sortDir, setSortDir] = useState<SortDir>("asc");
   const [uploading, setUploading] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [uploadResult, setUploadResult] = useState<UploadResult | null>(null);
   const [editingStudent, setEditingStudent] = useState<Student | null>(null);
   const [addingStudent, setAddingStudent] = useState(false);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
 
   const { data: years = [] } = useQuery({
     queryKey: ["academic-years"],
@@ -651,6 +660,60 @@ export default function StudentMappingPage() {
     return true;
   });
 
+  const sorted = [...filtered].sort((a, b) => {
+    const sectionLabel = (s: Student) => {
+      const bs = s.section_mapping?.branch_section;
+      return [
+        bs?.branch?.name,
+        bs?.program?.name,
+        bs?.class_?.name,
+        bs?.section?.name,
+      ].filter(Boolean).join(" ");
+    };
+
+    const rankOrder = ["", "Qualifier", "Top 10000", "Top 1000", "Top 100", "Top 10"];
+    const valueFor = (s: Student) => {
+      if (sortField === "is_active") return s.is_active ? 1 : 0;
+      if (sortField === "section_assignment") return sectionLabel(s).toLowerCase();
+      if (sortField === "target_rank") return rankOrder.indexOf(s.target_rank ?? "");
+      return String(s[sortField] ?? "").toLowerCase();
+    };
+
+    const aValue = valueFor(a);
+    const bValue = valueFor(b);
+    let result = 0;
+    if (typeof aValue === "number" && typeof bValue === "number") {
+      result = aValue - bValue;
+    } else {
+      result = String(aValue).localeCompare(String(bValue), undefined, { numeric: true, sensitivity: "base" });
+    }
+    return sortDir === "asc" ? result : -result;
+  });
+
+  const totalPages = Math.max(1, Math.ceil(sorted.length / pageSize));
+  const safePage = Math.min(page, totalPages);
+  const paginated = sorted.slice((safePage - 1) * pageSize, safePage * pageSize);
+
+  useEffect(() => {
+    setPage(1);
+  }, [search, filterBranchId, filterProgramId, filterClassId, yearId, pageSize, sortField, sortDir]);
+
+  const toggleSort = (field: SortField) => {
+    if (sortField === field) {
+      setSortDir(d => d === "asc" ? "desc" : "asc");
+    } else {
+      setSortField(field);
+      setSortDir("asc");
+    }
+  };
+
+  const SortIcon = ({ field }: { field: SortField }) => {
+    if (sortField !== field) return <ArrowUpDown className="ml-1 h-3.5 w-3.5 text-muted-foreground/50" />;
+    return sortDir === "asc"
+      ? <ArrowUp className="ml-1 h-3.5 w-3.5 text-primary" />
+      : <ArrowDown className="ml-1 h-3.5 w-3.5 text-primary" />;
+  };
+
   const handleDownloadTemplate = async () => {
     setDownloading(true);
     try {
@@ -716,6 +779,44 @@ export default function StudentMappingPage() {
     }
   };
 
+  const paginationBar = (position: "top" | "bottom") => (
+    <div className={`flex flex-wrap items-center justify-between gap-3 px-5 py-3 text-sm ${position === "bottom" ? "border-t" : "border-b bg-muted/10"}`}>
+      <div className="flex items-center gap-2 text-muted-foreground">
+        <span>Rows per page:</span>
+        <select
+          value={pageSize}
+          onChange={e => setPageSize(Number(e.target.value))}
+          className="h-8 rounded border border-input bg-background px-2 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+        >
+          {[10, 25, 50, 100].map(n => (
+            <option key={n} value={n}>{n}</option>
+          ))}
+        </select>
+      </div>
+
+      <div className="flex items-center gap-1 text-sm">
+        <span className="mr-2 text-muted-foreground">
+          {(safePage - 1) * pageSize + 1}-{Math.min(safePage * pageSize, sorted.length)} of {sorted.length}
+        </span>
+        <Button variant="ghost" size="icon" className="h-8 w-8" disabled={safePage === 1} onClick={() => setPage(1)}>
+          <ChevronsLeft className="h-4 w-4" />
+        </Button>
+        <Button variant="ghost" size="icon" className="h-8 w-8" disabled={safePage === 1} onClick={() => setPage(p => Math.max(1, p - 1))}>
+          <ChevronLeft className="h-4 w-4" />
+        </Button>
+        <span className="min-w-12 px-2 text-center text-xs text-muted-foreground">
+          {safePage}/{totalPages}
+        </span>
+        <Button variant="ghost" size="icon" className="h-8 w-8" disabled={safePage === totalPages} onClick={() => setPage(p => Math.min(totalPages, p + 1))}>
+          <ChevronRight className="h-4 w-4" />
+        </Button>
+        <Button variant="ghost" size="icon" className="h-8 w-8" disabled={safePage === totalPages} onClick={() => setPage(totalPages)}>
+          <ChevronsRight className="h-4 w-4" />
+        </Button>
+      </div>
+    </div>
+  );
+
   return (
     <div className="space-y-4">
       {/* ── Row 1: Title + Year selector ── */}
@@ -726,61 +827,91 @@ export default function StudentMappingPage() {
             Manage student section assignments per academic year.
           </p>
         </div>
-        <Select
-          value={selectedYear ? String(selectedYear.id) : ""}
-          onValueChange={v => {
-            const yr = years.find(y => y.id === +v);
-            if (yr) setSelectedYear(yr);
-          }}
-        >
-          <SelectTrigger className="w-40 h-9">
-            <SelectValue placeholder="Select year" />
-          </SelectTrigger>
-          <SelectContent>
-            {years.map(y => (
-              <SelectItem key={y.id} value={String(y.id)}>
-                {y.name}{y.is_current ? " ★" : ""}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <div className="flex flex-wrap items-center gap-2">
+          <Select
+            value={selectedYear ? String(selectedYear.id) : ""}
+            onValueChange={v => {
+              const yr = years.find(y => y.id === +v);
+              if (yr) setSelectedYear(yr);
+            }}
+          >
+            <SelectTrigger className="h-10 w-[140px]">
+              <SelectValue placeholder="Select year" />
+            </SelectTrigger>
+            <SelectContent>
+              {years.map(y => (
+                <SelectItem key={y.id} value={String(y.id)}>
+                  {y.name}{y.is_current ? " *" : ""}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Button variant="outline" onClick={handleDownloadTemplate} disabled={downloading}>
+            {downloading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
+            Template
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => fileRef.current?.click()}
+            disabled={uploading || !yearId}
+            title={!yearId ? "Select a year first" : undefined}
+          >
+            {uploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FileSpreadsheet className="mr-2 h-4 w-4" />}
+            Upload Excel
+          </Button>
+          <Button variant="outline" onClick={handleExportExcel} disabled={filtered.length === 0}>
+            <Download className="mr-2 h-4 w-4 text-emerald-600" />
+            Export Excel
+          </Button>
+          <Button
+            onClick={() => setAddingStudent(true)}
+            disabled={!yearId}
+            title={!yearId ? "Select a year first" : undefined}
+          >
+            <Plus className="mr-2 h-4 w-4" />
+            Add Student
+          </Button>
+        </div>
       </div>
 
       {/* ── Row 2: Actions left · Filters right ── */}
-      <div className="flex items-center gap-2 flex-wrap">
+
+      <div className="rounded-lg border bg-card p-3">
         <input ref={fileRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleFileChange} />
 
         {/* Action buttons */}
-        <Button
-          onClick={() => setAddingStudent(true)}
-          disabled={!yearId}
-          title={!yearId ? "Select a year first" : undefined}
-        >
-          <Plus className="mr-2 h-4 w-4" />
-          Add Student
-        </Button>
-        <Button
-          variant="outline"
-          onClick={() => fileRef.current?.click()}
-          disabled={uploading || !yearId}
-          title={!yearId ? "Select a year first" : undefined}
-        >
-          {uploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FileSpreadsheet className="mr-2 h-4 w-4" />}
-          Upload Excel
-        </Button>
-        <Button variant="outline" onClick={handleExportExcel} disabled={filtered.length === 0}>
-          <Download className="mr-2 h-4 w-4 text-emerald-600" />
-          Export Excel
-        </Button>
-        <Button variant="ghost" size="sm" onClick={handleDownloadTemplate} disabled={downloading} className="text-muted-foreground">
-          {downloading ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Download className="mr-1.5 h-3.5 w-3.5" />}
-          Template
-        </Button>
+        <div className="hidden">
+          <Button
+            onClick={() => setAddingStudent(true)}
+            disabled={!yearId}
+            title={!yearId ? "Select a year first" : undefined}
+          >
+            <Plus className="mr-2 h-4 w-4" />
+            Add Student
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => fileRef.current?.click()}
+            disabled={uploading || !yearId}
+            title={!yearId ? "Select a year first" : undefined}
+          >
+            {uploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FileSpreadsheet className="mr-2 h-4 w-4" />}
+            Upload Excel
+          </Button>
+          <Button variant="outline" onClick={handleExportExcel} disabled={filtered.length === 0}>
+            <Download className="mr-2 h-4 w-4 text-emerald-600" />
+            Export Excel
+          </Button>
+          <Button variant="ghost" size="sm" onClick={handleDownloadTemplate} disabled={downloading} className="text-muted-foreground">
+            {downloading ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Download className="mr-1.5 h-3.5 w-3.5" />}
+            Template
+          </Button>
+        </div>
 
         {/* Filters pushed to the right */}
-        <div className="ml-auto flex items-center gap-2 flex-wrap">
+        <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-[1fr,1fr,1fr,1.4fr]">
           <Select value={filterBranchId} onValueChange={v => { setFilterBranchId(v); setFilterProgramId("__all__"); setFilterClassId("__all__"); }}>
-            <SelectTrigger className="w-36 h-9">
+            <SelectTrigger className="h-9 w-full min-w-[170px]">
               <SelectValue placeholder="All branches" />
             </SelectTrigger>
             <SelectContent>
@@ -792,7 +923,7 @@ export default function StudentMappingPage() {
           </Select>
 
           <Select value={filterProgramId} onValueChange={v => { setFilterProgramId(v); setFilterClassId("__all__"); }} disabled={filterPrograms.length === 0}>
-            <SelectTrigger className="w-36 h-9">
+            <SelectTrigger className="h-9 w-full min-w-[170px]">
               <SelectValue placeholder="All programs" />
             </SelectTrigger>
             <SelectContent>
@@ -804,7 +935,7 @@ export default function StudentMappingPage() {
           </Select>
 
           <Select value={filterClassId} onValueChange={setFilterClassId} disabled={filterClasses.length === 0}>
-            <SelectTrigger className="w-32 h-9">
+            <SelectTrigger className="h-9 w-full min-w-[170px]">
               <SelectValue placeholder="All classes" />
             </SelectTrigger>
             <SelectContent>
@@ -815,13 +946,13 @@ export default function StudentMappingPage() {
             </SelectContent>
           </Select>
 
-          <div className="relative">
+          <div className="relative w-full min-w-[210px]">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
               placeholder="Search student…"
               value={search}
               onChange={e => setSearch(e.target.value)}
-              className="pl-9 w-52 h-9"
+              className="h-9 w-full pl-9"
             />
             {search && (
               <button onClick={() => setSearch("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
@@ -853,6 +984,7 @@ export default function StudentMappingPage() {
       {/* Table */}
       {yearId && (
         <Card>
+          {!isLoading && filtered.length > 0 && paginationBar("top")}
           <CardContent className="p-0">
             {isLoading ? (
               <div className="flex items-center justify-center py-20">
@@ -866,20 +998,44 @@ export default function StudentMappingPage() {
               </div>
             ) : (
               <div className="overflow-x-auto">
-                <table className="w-full text-sm">
+                <table className="w-full border-collapse text-sm">
                   <thead>
                     <tr className="border-b bg-muted/30">
-                      <th className="text-left px-5 py-3 font-semibold text-muted-foreground whitespace-nowrap">Adm. No</th>
-                      <th className="text-left px-4 py-3 font-semibold text-muted-foreground">Name</th>
-                      <th className="text-left px-4 py-3 font-semibold text-muted-foreground">Phone</th>
-                      <th className="text-left px-4 py-3 font-semibold text-muted-foreground">Target Rank</th>
-                      <th className="text-left px-4 py-3 font-semibold text-muted-foreground">Section Assignment</th>
-                      <th className="text-left px-4 py-3 font-semibold text-muted-foreground">Status</th>
+                      <th className="text-left px-5 py-3 font-semibold text-muted-foreground whitespace-nowrap">
+                        <button className="inline-flex items-center hover:text-foreground transition-colors" onClick={() => toggleSort("admission_no")}>
+                          Adm. No <SortIcon field="admission_no" />
+                        </button>
+                      </th>
+                      <th className="text-left px-4 py-3 font-semibold text-muted-foreground">
+                        <button className="inline-flex items-center hover:text-foreground transition-colors" onClick={() => toggleSort("name")}>
+                          Name <SortIcon field="name" />
+                        </button>
+                      </th>
+                      <th className="text-left px-4 py-3 font-semibold text-muted-foreground">
+                        <button className="inline-flex items-center hover:text-foreground transition-colors" onClick={() => toggleSort("phone")}>
+                          Phone <SortIcon field="phone" />
+                        </button>
+                      </th>
+                      <th className="text-left px-4 py-3 font-semibold text-muted-foreground">
+                        <button className="inline-flex items-center hover:text-foreground transition-colors" onClick={() => toggleSort("target_rank")}>
+                          Target Rank <SortIcon field="target_rank" />
+                        </button>
+                      </th>
+                      <th className="text-left px-4 py-3 font-semibold text-muted-foreground">
+                        <button className="inline-flex items-center hover:text-foreground transition-colors" onClick={() => toggleSort("section_assignment")}>
+                          Section Assignment <SortIcon field="section_assignment" />
+                        </button>
+                      </th>
+                      <th className="text-left px-4 py-3 font-semibold text-muted-foreground">
+                        <button className="inline-flex items-center hover:text-foreground transition-colors" onClick={() => toggleSort("is_active")}>
+                          Status <SortIcon field="is_active" />
+                        </button>
+                      </th>
                       <th className="text-center px-4 py-3 font-semibold text-muted-foreground whitespace-nowrap">Action</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y">
-                    {filtered.map(s => {
+                    {paginated.map(s => {
                       const bs = s.section_mapping?.branch_section;
                       const STAR_TIERS = ["Qualifier", "Top 10000", "Top 1000", "Top 100", "Top 10"];
                       const stars = s.target_rank ? STAR_TIERS.indexOf(s.target_rank) + 1 : 0;
@@ -920,8 +1076,8 @@ export default function StudentMappingPage() {
                             </span>
                           </td>
                           <td className="px-4 py-3 text-center">
-                            <Button size="sm" variant="ghost" onClick={() => setEditingStudent(s)} className="h-7 w-7 p-0" title="Edit student">
-                              <Edit className="h-3.5 w-3.5" />
+                            <Button size="icon" variant="ghost" onClick={() => setEditingStudent(s)} className="h-8 w-8 text-foreground hover:text-primary" title="Edit student">
+                              <Pencil className="h-4 w-4" />
                             </Button>
                           </td>
                         </tr>
@@ -932,6 +1088,7 @@ export default function StudentMappingPage() {
               </div>
             )}
           </CardContent>
+          {!isLoading && filtered.length > 0 && paginationBar("bottom")}
         </Card>
       )}
 

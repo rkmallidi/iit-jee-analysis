@@ -2,7 +2,7 @@
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, computed_field
 
 from app.schemas.mapping import BranchSectionOut
 
@@ -49,6 +49,11 @@ class StudentOut(StudentBase):
     id: int
     created_at: datetime
     section_mapping: Optional[StudentSectionOut] = None  # set per-request by CRUD
+
+    @computed_field
+    @property
+    def omr_id(self) -> str:
+        return self.admission_no[-7:]
 
     model_config = {"from_attributes": True}
 

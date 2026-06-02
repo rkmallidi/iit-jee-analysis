@@ -1,14 +1,19 @@
 import { useRef, useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import * as XLSX from "xlsx";
 import {
   Plus, Search, Pencil, Loader2, KeyRound, Eye, EyeOff,
   MoreVertical, UserX, UserCheck, X, Mail, Phone, Camera, ImagePlus, Trash2,
+  FileSpreadsheet, Download, CheckCircle2, AlertCircle,
 } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 
-import { getUsers, getRoles, createUser, updateUser, deleteUser, uploadUserAvatar } from "@/lib/api";
+import {
+  getUsers, getRoles, createUser, updateUser, deleteUser, uploadUserAvatar,
+  downloadUsersTemplate, uploadUsersExcel,
+} from "@/lib/api";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -21,7 +26,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { toast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
-import type { Role, SubjectName, User } from "@/types";
+import type { Role, SubjectName, UploadResult, User } from "@/types";
 
 // ── Role colours ───────────────────────────────────────────────────────────────
 const ROLE_COLORS: Record<string, string> = {
@@ -33,6 +38,11 @@ const ROLE_COLORS: Record<string, string> = {
   Operator:         "bg-sky-100 text-sky-700 border-sky-200",
 };
 const SUBJECTS: SubjectName[] = ["Mathematics", "Physics", "Chemistry"];
+const SUBJECT_COLORS: Record<SubjectName, string> = {
+  Mathematics: "bg-blue-100 text-blue-700 border-blue-200",
+  Physics:     "bg-purple-100 text-purple-700 border-purple-200",
+  Chemistry:   "bg-green-100 text-green-700 border-green-200",
+};
 
 // ── Avatar helpers ─────────────────────────────────────────────────────────────
 function avatarSrc(url?: string | null) {
@@ -198,6 +208,47 @@ function PhotoDialog({ user, onClose }: { user: User; onClose: () => void }) {
             Save Photo
           </Button>
         </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function UploadResultDialog({ result, onClose }: { result: UploadResult; onClose: () => void }) {
+  return (
+    <Dialog open onOpenChange={o => { if (!o) onClose(); }}>
+      <DialogContent className="max-w-md">
+        <DialogHeader><DialogTitle>Upload Complete</DialogTitle></DialogHeader>
+        <div className="space-y-3 pt-1">
+          <div className="grid grid-cols-3 gap-3 text-center">
+            <div className="rounded-lg bg-emerald-50 border border-emerald-200 py-3">
+              <p className="text-2xl font-bold text-emerald-600">{result.created}</p>
+              <p className="text-xs text-emerald-700 font-medium mt-0.5">Created</p>
+            </div>
+            <div className="rounded-lg bg-blue-50 border border-blue-200 py-3">
+              <p className="text-2xl font-bold text-blue-600">{result.updated}</p>
+              <p className="text-xs text-blue-700 font-medium mt-0.5">Updated</p>
+            </div>
+            <div className="rounded-lg bg-muted border py-3">
+              <p className="text-2xl font-bold text-muted-foreground">{result.skipped}</p>
+              <p className="text-xs text-muted-foreground font-medium mt-0.5">Skipped</p>
+            </div>
+          </div>
+          {result.errors.length > 0 ? (
+            <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3">
+              <p className="text-xs font-semibold text-destructive mb-1.5 flex items-center gap-1">
+                <AlertCircle className="h-3.5 w-3.5" /> {result.errors.length} row error{result.errors.length !== 1 ? "s" : ""}
+              </p>
+              <ul className="space-y-0.5 max-h-40 overflow-y-auto">
+                {result.errors.map((e, i) => <li key={i} className="text-[11px] text-destructive/80">{e}</li>)}
+              </ul>
+            </div>
+          ) : (
+            <p className="text-sm text-emerald-600 flex items-center gap-1.5">
+              <CheckCircle2 className="h-4 w-4" /> All rows processed successfully
+            </p>
+          )}
+        </div>
+        <DialogFooter><Button onClick={onClose}>Done</Button></DialogFooter>
       </DialogContent>
     </Dialog>
   );
@@ -450,6 +501,7 @@ function ResetPasswordDialog({ user, onClose }: { user: User; onClose: () => voi
 // ── Main page ──────────────────────────────────────────────────────────────────
 export default function UsersPage() {
   const qc = useQueryClient();
+  const fileRef = useRef<HTMLInputElement>(null);
   const [search, setSearch]           = useState("");
   const [roleFilter, setRoleFilter]   = useState<string>("all");
   const [dialogOpen, setDialogOpen]   = useState(false);
@@ -457,12 +509,15 @@ export default function UsersPage() {
   const [deleteTarget, setDeleteTarget] = useState<User | null>(null);
   const [resetTarget, setResetTarget]   = useState<User | null>(null);
   const [photoTarget, setPhotoTarget]   = useState<User | null>(null);
+  const [uploadResult, setUploadResult] = useState<UploadResult | null>(null);
+  const [uploading, setUploading]       = useState(false);
+  const [downloading, setDownloading]   = useState(false);
 
-  const { data: users = [], isLoading } = useQuery({
+  const { data: users = [], isLoading } = useQuery<User[]>({
     queryKey: ["users"],
     queryFn: () => getUsers().then(r => r.data),
   });
-  const { data: roles = [] } = useQuery({
+  const { data: roles = [] } = useQuery<Role[]>({
     queryKey: ["roles"],
     queryFn: () => getRoles().then(r => r.data),
   });
@@ -485,6 +540,63 @@ export default function UsersPage() {
     onError: () => toast({ title: "Could not reactivate user.", variant: "destructive" }),
   });
 
+  const handleDownloadTemplate = async () => {
+    setDownloading(true);
+    try {
+      const res = await downloadUsersTemplate();
+      const url = URL.createObjectURL(new Blob([res.data]));
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "users_template.xlsx";
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      toast({ title: "Download failed", variant: "destructive" });
+    } finally {
+      setDownloading(false);
+    }
+  };
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = "";
+    setUploading(true);
+    try {
+      const res = await uploadUsersExcel(file);
+      qc.invalidateQueries({ queryKey: ["users"] });
+      setUploadResult(res.data);
+    } catch (err: any) {
+      toast({ title: "Upload error", description: err?.detail ?? "Upload failed", variant: "destructive" });
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleExportExcel = () => {
+    const rows = filtered.map(u => ({
+      "Username": u.username,
+      "Full Name": u.full_name,
+      "Email": u.email ?? "",
+      "Phone": u.phone ?? "",
+      "WhatsApp": u.whatsapp ?? "",
+      "Roles": u.roles.map(r => r.name).join(", "),
+      "Faculty Subject": (u.faculty_subjects ?? []).join(", "),
+      "Status": u.is_active ? "Active" : "Inactive",
+      "Created At": new Date(u.created_at).toLocaleDateString("en-IN"),
+    }));
+    const ws = XLSX.utils.json_to_sheet(rows);
+    ws["!cols"] = [
+      { wch: 18 }, { wch: 28 }, { wch: 30 }, { wch: 16 }, { wch: 16 },
+      { wch: 28 }, { wch: 20 }, { wch: 10 }, { wch: 14 },
+    ];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Users");
+    const date = new Date().toISOString().slice(0, 10);
+    XLSX.writeFile(wb, `users_export_${date}.xlsx`);
+    toast({ title: "Exported", description: `${rows.length} users exported to Excel.` });
+  };
+
   const filtered = users
     .filter(u => {
       const matchesSearch = !search ||
@@ -506,9 +618,24 @@ export default function UsersPage() {
             {users.filter(u => u.is_active).length} active · {users.filter(u => !u.is_active).length} inactive
           </p>
         </div>
-        <Button onClick={() => { setEditUser(null); setDialogOpen(true); }}>
-          <Plus className="mr-2 h-4 w-4" /> Add User
-        </Button>
+        <div className="flex gap-2">
+          <input ref={fileRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleFileChange} />
+          <Button variant="outline" onClick={handleDownloadTemplate} disabled={downloading}>
+            {downloading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
+            Template
+          </Button>
+          <Button variant="outline" onClick={() => fileRef.current?.click()} disabled={uploading}>
+            {uploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FileSpreadsheet className="mr-2 h-4 w-4" />}
+            Upload Excel
+          </Button>
+          <Button variant="outline" onClick={handleExportExcel} disabled={filtered.length === 0}>
+            <Download className="mr-2 h-4 w-4 text-emerald-600" />
+            Export Excel
+          </Button>
+          <Button onClick={() => { setEditUser(null); setDialogOpen(true); }}>
+            <Plus className="mr-2 h-4 w-4" /> Add User
+          </Button>
+        </div>
       </div>
 
       {/* Search + Role filter */}
@@ -613,6 +740,11 @@ export default function UsersPage() {
                         {r.name}
                       </span>
                     ))}
+                    {(u.faculty_subjects ?? []).map(subject => (
+                      <span key={subject} className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold ${SUBJECT_COLORS[subject]}`}>
+                        {subject}
+                      </span>
+                    ))}
                   </div>
 
                   {/* Action menu */}
@@ -666,6 +798,9 @@ export default function UsersPage() {
       )}
       {resetTarget && (
         <ResetPasswordDialog user={resetTarget} onClose={() => setResetTarget(null)} />
+      )}
+      {uploadResult && (
+        <UploadResultDialog result={uploadResult} onClose={() => setUploadResult(null)} />
       )}
       <ConfirmDialog
         open={deleteTarget !== null}
