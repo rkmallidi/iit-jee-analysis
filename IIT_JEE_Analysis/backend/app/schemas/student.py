@@ -58,6 +58,15 @@ class StudentOut(StudentBase):
     model_config = {"from_attributes": True}
 
 
+class StudentPageOut(BaseModel):
+    items: list[StudentOut]
+    total: int
+    assigned: int
+    unassigned: int
+    skip: int
+    limit: int
+
+
 class StudentSectionAssign(BaseModel):
     branch_section_id: int
     academic_year_id: int

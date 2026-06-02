@@ -158,6 +158,15 @@ export interface Student {
   section_mapping?: StudentSection;
 }
 
+export interface StudentPage {
+  items: Student[];
+  total: number;
+  assigned: number;
+  unassigned: number;
+  skip: number;
+  limit: number;
+}
+
 export interface UploadResult {
   created: number;
   updated: number;
@@ -229,6 +238,17 @@ export interface OMRAbsentStudent {
   omr_id: string;
   admission_no: string;
   name: string;
+  branch_name?: string;
+  section_name?: string;
+}
+
+export interface OMRStudentValidationDetail {
+  omr_id: string;
+  admission_no: string;
+  name: string;
+  branch_name: string;
+  section_name: string;
+  details: string;
 }
 
 export interface OMRValidationSummary {
@@ -237,6 +257,8 @@ export interface OMRValidationSummary {
   invalid_student_ids: string[];
   missing_students: string[];
   absent_students?: OMRAbsentStudent[];
+  duplicate_students?: OMRStudentValidationDetail[];
+  invalid_students?: OMRStudentValidationDetail[];
   errors: string[];
   file_records: OMRValidationRecord[];
   program_id: number;
@@ -328,6 +350,7 @@ export interface StudentResult {
   target_rank: RankCategory | null;
   branch_id: number | null;
   branch_name: string | null;
+  section_name?: string | null;
   total_score: number;
   math_score: number;
   physics_score: number;

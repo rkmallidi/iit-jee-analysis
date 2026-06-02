@@ -1,9 +1,9 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { useAcademicYearStore } from "@/store/academicYear";
 import {
-  Building2, Users, Loader2, FileText, BarChart2,
+  Building2, Users, FileText, BarChart2,
   TrendingUp, Award, CalendarDays, BookOpen, ChevronRight,
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
@@ -199,6 +199,110 @@ function BranchCard({ branchName, students, mas, onClick }: BranchCardProps) {
 }
 
 // ── Main page ──────────────────────────────────────────────────────────────────
+function BranchCardSkeleton() {
+  const shimmer = "relative overflow-hidden bg-slate-100 before:absolute before:inset-0 before:-translate-x-full before:animate-[shimmer_1.4s_infinite] before:bg-gradient-to-r before:from-transparent before:via-white/70 before:to-transparent";
+
+  return (
+    <Card className="border overflow-hidden">
+      <div className="flex items-center justify-between gap-3 px-5 py-3 bg-gradient-to-r from-slate-200 to-slate-100">
+        <div className="flex items-center gap-2 flex-1">
+          <div className={cn("h-4 w-4 rounded", shimmer)} />
+          <div className={cn("h-4 w-44 max-w-[70%] rounded", shimmer)} />
+        </div>
+        <div className={cn("h-4 w-20 rounded", shimmer)} />
+      </div>
+      <CardContent className="px-5 py-4 space-y-4">
+        <div className="grid grid-cols-3 gap-3">
+          {[0, 1, 2].map(i => (
+            <div key={i} className="rounded-lg border px-3 py-2 space-y-2">
+              <div className={cn("h-3 w-16 mx-auto rounded", shimmer)} />
+              <div className={cn("h-6 w-12 mx-auto rounded", shimmer)} />
+            </div>
+          ))}
+        </div>
+
+        <div className="space-y-2">
+          <div className={cn("h-3 w-28 rounded", shimmer)} />
+          {[0, 1, 2].map(i => (
+            <div key={i} className="grid grid-cols-5 gap-2 rounded-md border px-2 py-2">
+              <div className={cn("h-3 w-10 rounded", shimmer)} />
+              <div className={cn("h-3 rounded", shimmer)} />
+              <div className={cn("h-3 rounded", shimmer)} />
+              <div className={cn("h-3 rounded", shimmer)} />
+              <div className={cn("h-3 rounded", shimmer)} />
+            </div>
+          ))}
+        </div>
+
+        <div className="space-y-2">
+          <div className={cn("h-3 w-16 rounded", shimmer)} />
+          {[0, 1, 2].map(i => (
+            <div key={i} className="flex items-center gap-2 rounded-md border px-2 py-2">
+              <div className={cn("h-4 w-4 rounded", shimmer)} />
+              <div className={cn("h-3 w-16 rounded", shimmer)} />
+              <div className={cn("h-3 flex-1 rounded", shimmer)} />
+              <div className={cn("h-3 w-10 rounded", shimmer)} />
+            </div>
+          ))}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function BranchResultCard({
+  paper,
+  branchId,
+  branchName,
+  examCode,
+  onOpen,
+}: {
+  paper: Exam;
+  branchId: number;
+  branchName: string;
+  examCode: string;
+  onOpen: (drawer: {
+    paperId: number;
+    examCode: string;
+    paper: string;
+    mas: { math: number | null; physics: number | null; chemistry: number | null };
+    branchId: number;
+    branchName: string;
+  }) => void;
+}) {
+  const { data, isLoading } = useQuery<ExamResultsDetail>({
+    queryKey: ["exam-results", paper.id, "branch-summary", branchId],
+    queryFn: () => getExamResults(paper.id, { branch_id: branchId, include_responses: false }).then(r => r.data),
+    enabled: !!paper.id && !!branchId,
+    staleTime: 60_000,
+  });
+
+  if (isLoading || !data) return <BranchCardSkeleton />;
+
+  const paperMas = {
+    math: paper.mas_mathematics ?? null,
+    physics: paper.mas_physics ?? null,
+    chemistry: paper.mas_chemistry ?? null,
+  };
+
+  return (
+    <BranchCard
+      branchId={branchId}
+      branchName={branchName}
+      students={data.students}
+      mas={paperMas}
+      onClick={() => onOpen({
+        paperId: paper.id,
+        examCode,
+        paper: paper.paper,
+        mas: paperMas,
+        branchId,
+        branchName,
+      })}
+    />
+  );
+}
+
 export default function BranchResultsPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -250,9 +354,15 @@ export default function BranchResultsPage() {
     )
     .sort((a, b) => new Date(b.exam_date).getTime() - new Date(a.exam_date).getTime());
 
+  useEffect(() => {
+    if (!examId && eligibleExams.length > 0) {
+      navigate(`/branch-results?exam=${eligibleExams[0].id}`, { replace: true });
+    }
+  }, [examId, eligibleExams, navigate]);
+
   const { data: examDetail, isLoading: detailLoading } = useQuery<ExamDetail>({
     queryKey: ["exam-detail", examId],
-    queryFn: () => examId ? getExamDetail(examId).then(r => r.data) : null,
+    queryFn: () => getExamDetail(examId!).then(r => r.data),
     enabled: !!examId,
   });
 
@@ -261,57 +371,20 @@ export default function BranchResultsPage() {
     ? allExams.filter(e => e.exam_code === examDetail.exam_code && (e.status === "published" || e.status === "completed"))
     : [];
 
-  // Fetch results for each paper
-  const p1Paper = examPapers.find(p => p.paper === "P1");
-  const p2Paper = examPapers.find(p => p.paper === "P2");
-
-  const { data: p1Results, isLoading: p1Loading } = useQuery<ExamResultsDetail>({
-    queryKey: ["exam-results", p1Paper?.id],
-    queryFn: () => getExamResults(p1Paper!.id).then(r => r.data),
-    enabled: !!p1Paper,
-  });
-
-  const { data: p2Results, isLoading: p2Loading } = useQuery<ExamResultsDetail>({
-    queryKey: ["exam-results", p2Paper?.id],
-    queryFn: () => getExamResults(p2Paper!.id).then(r => r.data),
-    enabled: !!p2Paper,
-  });
-
-  const resultsLoading = p1Loading || p2Loading;
-
-  // Group students by branch for a given results set
-  const groupByBranch = (results: ExamResultsDetail | undefined) => {
-    if (!results) return new Map<number, { name: string; students: StudentResult[] }>();
-    const map = new Map<number, { name: string; students: StudentResult[] }>();
-    for (const s of results.students) {
-      if (s.branch_id == null) continue;
-      if (!map.has(s.branch_id)) map.set(s.branch_id, { name: s.branch_name ?? "Unknown", students: [] });
-      map.get(s.branch_id)!.students.push(s);
-    }
-    return map;
-  };
-
-  const p1ByBranch = useMemo(() => groupByBranch(p1Results), [p1Results]);
-  const p2ByBranch = useMemo(() => groupByBranch(p2Results), [p2Results]);
-
   // All unique branches across papers — only those with students configured, filtered by role
-  const allBranchIds = useMemo(() => {
-    const ids = new Set<number>();
-    p1ByBranch.forEach((_, id) => ids.add(id));
-    p2ByBranch.forEach((_, id) => ids.add(id));
-    // include configured branches that have at least one student
-    examDetail?.branches.forEach(b => {
-      const hasStudents = b.sections.some(sec => sec.student_count > 0);
-      if (hasStudents) ids.add(b.id);
-    });
-    return Array.from(ids)
-      .filter(id => isAdmin() || branchIds.includes(id))
-      .sort((a, b) => {
-        const na = p1ByBranch.get(a)?.name ?? p2ByBranch.get(a)?.name ?? examDetail?.branches.find(br => br.id === a)?.name ?? "";
-        const nb = p1ByBranch.get(b)?.name ?? p2ByBranch.get(b)?.name ?? examDetail?.branches.find(br => br.id === b)?.name ?? "";
-        return na.localeCompare(nb);
-      });
-  }, [p1ByBranch, p2ByBranch, examDetail, isAdmin, branchIds]);
+  const branchSummaries = useMemo(() => {
+    return (examDetail?.branches ?? [])
+      .filter(branch => branch.sections.some(sec => sec.student_count > 0))
+      .filter(branch => isAdmin() || branchIds.includes(branch.id))
+      .map(branch => ({
+        id: branch.id,
+        name: branch.name,
+        studentCount: branch.sections.reduce((sum, sec) => sum + sec.student_count, 0),
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [examDetail, isAdmin, branchIds]);
+
+  const totalConfiguredStudents = branchSummaries.reduce((sum, branch) => sum + branch.studentCount, 0);
 
   const selectExam = (id: string) => navigate(`/branch-results?exam=${id}`);
 
@@ -402,11 +475,29 @@ export default function BranchResultsPage() {
     </div>
   );
 
-  if (detailLoading || resultsLoading) return (
+  const skeletonCardCount = Math.max(3, Math.min(9, examDetail?.branches.length || 6));
+
+  if (detailLoading) return (
     <div className="space-y-5">
       <TopBar />
-      <div className="flex items-center justify-center h-64">
-        <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
+      <div className="rounded-xl border bg-gradient-to-r from-blue-50 to-slate-50 border-blue-100 px-5 py-4">
+        <div className="flex flex-wrap items-center gap-x-8 gap-y-3">
+          <div className="space-y-2">
+            <div className="h-3 w-20 rounded bg-slate-200 animate-pulse" />
+            <div className="h-6 w-48 rounded bg-slate-200 animate-pulse" />
+          </div>
+          {[0, 1, 2].map(i => (
+            <div key={i} className="space-y-2">
+              <div className="h-3 w-16 rounded bg-slate-200 animate-pulse" />
+              <div className="h-4 w-24 rounded bg-slate-200 animate-pulse" />
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        {Array.from({ length: skeletonCardCount }).map((_, i) => (
+          <BranchCardSkeleton key={i} />
+        ))}
       </div>
     </div>
   );
@@ -458,13 +549,13 @@ export default function BranchResultsPage() {
             <div className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1">
               <Building2 className="h-3 w-3" /> Branches
             </div>
-            <div className="text-sm font-semibold mt-0.5">{allBranchIds.length}</div>
+            <div className="text-sm font-semibold mt-0.5">{branchSummaries.length}</div>
           </div>
           <div>
             <div className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1">
               <Users className="h-3 w-3" /> Total Students
             </div>
-            <div className="text-sm font-semibold mt-0.5">{p1Results?.students.length ?? p2Results?.students.length ?? 0}</div>
+            <div className="text-sm font-semibold mt-0.5">{totalConfiguredStudents}</div>
           </div>
           <Badge variant="outline" className={cn("text-sm px-3 py-1 h-fit",
             isAdvanced ? "bg-violet-100 text-violet-800 border-violet-300" : "bg-blue-100 text-blue-800 border-blue-300"
@@ -484,9 +575,6 @@ export default function BranchResultsPage() {
       ) : (
         <div className="space-y-8">
           {examPapers.map(paper => {
-            const byBranch = paper.paper === "P1" ? p1ByBranch : p2ByBranch;
-            const paperId  = paper.id;
-
             return (
               <div key={paper.id}>
                 {/* Paper label (only for Advanced) */}
@@ -503,41 +591,20 @@ export default function BranchResultsPage() {
                   </div>
                 )}
 
-                {allBranchIds.length === 0 ? (
+                {branchSummaries.length === 0 ? (
                   <p className="text-sm text-muted-foreground italic">No branch data found.</p>
                 ) : (
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {allBranchIds.map(branchId => {
-                      const entry = byBranch.get(branchId);
-                      const branchName = entry?.name
-                        ?? examDetail.branches.find(b => b.id === branchId)?.name
-                        ?? `Branch ${branchId}`;
-                      const students = entry?.students ?? [];
-
-                      const paperMas = {
-                        math:      paper.mas_mathematics ?? null,
-                        physics:   paper.mas_physics ?? null,
-                        chemistry: paper.mas_chemistry ?? null,
-                      };
-
-                      return (
-                        <BranchCard
-                          key={branchId}
-                          branchId={branchId}
-                          branchName={branchName}
-                          students={students}
-                          mas={paperMas}
-                          onClick={() => setDrawer({
-                            paperId,
-                            examCode: examDetail.exam_code,
-                            paper: paper.paper,
-                            mas: paperMas,
-                            branchId,
-                            branchName,
-                          })}
-                        />
-                      );
-                    })}
+                    {branchSummaries.map(branch => (
+                      <BranchResultCard
+                        key={`${paper.id}-${branch.id}`}
+                        paper={paper}
+                        branchId={branch.id}
+                        branchName={branch.name}
+                        examCode={examDetail.exam_code}
+                        onOpen={setDrawer}
+                      />
+                    ))}
                   </div>
                 )}
               </div>

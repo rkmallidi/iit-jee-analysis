@@ -27,9 +27,10 @@ const fmt = (d: string) =>
 interface StudentsDialogProps {
   section: BranchSectionDetail | null;
   branchName: string;
+  loading?: boolean;
   onClose: () => void;
 }
-function StudentsDialog({ section, branchName, onClose }: StudentsDialogProps) {
+function StudentsDialog({ section, branchName, loading = false, onClose }: StudentsDialogProps) {
   if (!section) return null;
   return (
     <Dialog open onOpenChange={o => { if (!o) onClose(); }}>
@@ -41,7 +42,14 @@ function StudentsDialog({ section, branchName, onClose }: StudentsDialogProps) {
           <p className="text-xs text-muted-foreground">{section.student_count} student{section.student_count !== 1 ? "s" : ""}</p>
         </DialogHeader>
         <div className="flex-1 overflow-y-auto mt-2">
-          {section.student_count === 0 ? (
+          {loading ? (
+            <div className="flex items-center justify-center gap-2 py-8 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin text-blue-500" />
+              Loading students...
+            </div>
+          ) : section.student_count > 0 && section.students.length === 0 ? (
+            <p className="text-sm text-muted-foreground italic text-center py-8">Student list is not available.</p>
+          ) : section.student_count === 0 ? (
             <p className="text-sm text-muted-foreground italic text-center py-8">No students assigned.</p>
           ) : (
             <table className="compact-table w-full text-xs">
@@ -239,6 +247,54 @@ function BranchUploadPanel({ paper: _paper, branch, log, onUpload, onClear, onSh
 }
 
 // ── main page ──────────────────────────────────────────────────────────────────
+function ResultsPageSkeleton() {
+  const shimmer = "relative overflow-hidden bg-slate-100 before:absolute before:inset-0 before:-translate-x-full before:animate-[shimmer_1.4s_infinite] before:bg-gradient-to-r before:from-transparent before:via-white/70 before:to-transparent";
+
+  return (
+    <div className="space-y-5">
+      <div className="rounded-xl border bg-gradient-to-r from-blue-50 to-slate-50 border-blue-100 px-5 py-4">
+        <div className="flex flex-wrap items-center gap-x-8 gap-y-3">
+          <div className="space-y-2">
+            <div className={cn("h-3 w-20 rounded", shimmer)} />
+            <div className={cn("h-6 w-48 rounded", shimmer)} />
+          </div>
+          {[0, 1, 2, 3].map(i => (
+            <div key={i} className="space-y-2">
+              <div className={cn("h-3 w-16 rounded", shimmer)} />
+              <div className={cn("h-4 w-24 rounded", shimmer)} />
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="space-y-3">
+        {[0, 1, 2, 3, 4].map(i => (
+          <Card key={i} className="border-0 overflow-hidden shadow-sm">
+            <div className="flex items-center justify-between gap-4 px-5 py-3 bg-gradient-to-r from-slate-200 to-slate-100">
+              <div className="flex items-center gap-2 flex-1">
+                <div className={cn("h-4 w-4 rounded", shimmer)} />
+                <div className={cn("h-4 w-56 max-w-[70%] rounded", shimmer)} />
+              </div>
+              <div className={cn("h-4 w-36 rounded", shimmer)} />
+            </div>
+            <CardContent className="px-5 py-4 space-y-3">
+              <div className="flex flex-wrap gap-1.5">
+                {[0, 1, 2].map(j => (
+                  <div key={j} className={cn("h-7 w-24 rounded-md", shimmer)} />
+                ))}
+              </div>
+              <div className="rounded-xl border border-dashed border-slate-200 px-4 py-3 flex items-center justify-between">
+                <div className={cn("h-4 w-48 rounded", shimmer)} />
+                <div className={cn("h-8 w-28 rounded-md", shimmer)} />
+              </div>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function ResultsPage() {
   const navigate = useNavigate();
   const qc = useQueryClient();
@@ -304,8 +360,16 @@ export default function ResultsPage() {
 
   const { data: examDetail, isLoading: examLoading } = useQuery<ExamDetail>({
     queryKey: ["exam-detail", examId],
-    queryFn: () => examId ? getExamDetail(examId).then(r => r.data) : null,
+    queryFn: () => getExamDetail(examId!, { include_students: false }).then(r => r.data),
     enabled: !!examId,
+    staleTime: 60_000,
+  });
+
+  const { data: fullExamDetail, isLoading: studentsLoading } = useQuery<ExamDetail>({
+    queryKey: ["exam-detail", examId, "students"],
+    queryFn: () => getExamDetail(examId!, { include_students: true }).then(r => r.data),
+    enabled: !!examId && !!studentsPopup,
+    staleTime: 60_000,
   });
 
   // Papers for the selected exam
@@ -444,9 +508,7 @@ export default function ResultsPage() {
     return (
       <div className="space-y-5">
         <TopBar />
-        <div className="flex items-center justify-center h-64">
-          <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
-        </div>
+        <ResultsPageSkeleton />
       </div>
     );
   }
@@ -466,6 +528,12 @@ export default function ResultsPage() {
   const totalStudents = configuredBranches.reduce((sum, branch) =>
     sum + branch.sections.reduce((s, sec) => s + sec.student_count, 0), 0
   );
+  const popupSection = studentsPopup && fullExamDetail
+    ? fullExamDetail.branches
+        .find(branch => branch.name === studentsPopup.branchName)
+        ?.sections.find(section => section.section_name === studentsPopup.section.section_name)
+      ?? studentsPopup.section
+    : studentsPopup?.section ?? null;
 
   // ── Exam selected ────────────────────────────────────────────────────────────
   return (
@@ -587,8 +655,9 @@ export default function ResultsPage() {
       {/* Students Popup */}
       {studentsPopup && (
         <StudentsDialog
-          section={studentsPopup.section}
+          section={popupSection}
           branchName={studentsPopup.branchName}
+          loading={studentsLoading}
           onClose={() => setStudentsPopup(null)}
         />
       )}

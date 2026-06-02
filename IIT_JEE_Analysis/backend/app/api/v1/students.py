@@ -14,6 +14,7 @@ from app.crud.student import (
     get_student,
     get_student_by_admission_no,
     get_students,
+    get_students_page,
     has_history,
     reactivate_student,
     remove_section,
@@ -30,6 +31,7 @@ from app.models.user import RoleName
 from app.schemas.student import (
     StudentCreate,
     StudentOut,
+    StudentPageOut,
     StudentSectionAssign,
     StudentUpdate,
     UploadResult,
@@ -452,6 +454,38 @@ def list_students(
     limit: int = Query(1000),
 ):
     return get_students(db, academic_year_id, branch_section_id, search, skip, limit)
+
+
+@router.get("/page", response_model=StudentPageOut)
+def list_students_page(
+    db: DbSession,
+    _: CurrentUser,
+    academic_year_id: Optional[int] = Query(None),
+    branch_id: Optional[int] = Query(None),
+    branch_ids: Optional[list[int]] = Query(None),
+    program_id: Optional[int] = Query(None),
+    class_id: Optional[int] = Query(None),
+    branch_section_id: Optional[int] = Query(None),
+    search: Optional[str] = Query(None),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=500),
+    sort_field: str = Query("admission_no"),
+    sort_dir: str = Query("asc"),
+):
+    return get_students_page(
+        db,
+        academic_year_id=academic_year_id,
+        branch_id=branch_id,
+        branch_ids=branch_ids,
+        program_id=program_id,
+        class_id=class_id,
+        branch_section_id=branch_section_id,
+        search=search,
+        skip=skip,
+        limit=limit,
+        sort_field=sort_field,
+        sort_dir=sort_dir,
+    )
 
 
 @router.post("", response_model=StudentOut, status_code=201, dependencies=[admin_only])

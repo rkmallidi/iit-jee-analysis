@@ -11,12 +11,13 @@ from app.api.deps import DbSession, require_roles
 from app.crud.exam_result import get_enrolled_students_for_exam, upsert_exam_result
 from app.models.exam import Exam, EXAM_STATUS_DRAFT, EXAM_STATUS_PUBLISHED, EXAM_STATUS_COMPLETED
 from app.models.exam_question import ExamQuestion
+from app.models.branch import Branch
 from app.models.mapping import BranchSection
 from app.models.student import Student
 from app.models.student_section import StudentSection
 from app.models.user import RoleName
 from app.schemas.exam import ExamCreate, ExamOut, ExamUpdate, ExamQuestionOut, ExamQuestionUpdate, ExamQuestionUploadResult, ExamDetailOut
-from app.schemas.exam_result import OMRAbsentStudent, OMRValidationRecord, OMRValidationSummary, OMRUploadConfirm, ExamResultsDetail, StudentResult, QuestionResult
+from app.schemas.exam_result import OMRAbsentStudent, OMRStudentValidationDetail, OMRValidationRecord, OMRValidationSummary, OMRUploadConfirm, ExamResultsDetail, StudentResult, QuestionResult
 
 router = APIRouter(prefix="/exams", tags=["exams"])
 admin_only = Depends(require_roles(RoleName.ADMIN))
@@ -173,7 +174,11 @@ def list_exams(
 
 
 @router.get("/{exam_id}/detail", response_model=ExamDetailOut)
-def get_exam_detail(exam_id: int, db: DbSession):
+def get_exam_detail(
+    exam_id: int,
+    db: DbSession,
+    include_students: bool = Query(True),
+):
     """Get detailed exam view with ALL branches; sections/students shown where configured."""
     exam = db.get(Exam, exam_id)
     if not exam:
@@ -205,9 +210,22 @@ def get_exam_detail(exam_id: int, db: DbSession):
     for bs in branch_sections:
         bs_by_branch.setdefault(bs.branch_id, []).append(bs)
 
-    # Students for all branch sections
+    # Student counts for all branch sections; full student lists are optional because large branches
+    # make this endpoint heavy for upload/status pages.
+    student_counts_by_bs = {
+        row.branch_section_id: row.count
+        for row in db.execute(
+            select(StudentSection.branch_section_id, func.count(StudentSection.student_id).label("count"))
+            .where(
+                StudentSection.academic_year_id == exam.academic_year_id,
+                StudentSection.branch_section_id.in_([bs.id for bs in branch_sections]),
+            )
+            .group_by(StudentSection.branch_section_id)
+        ).all()
+    } if branch_sections else {}
+
     students_by_bs: dict[int, list] = {}
-    if branch_sections:
+    if include_students and branch_sections:
         student_sections = db.scalars(
             select(StudentSection).where(
                 StudentSection.academic_year_id == exam.academic_year_id,
@@ -245,7 +263,7 @@ def get_exam_detail(exam_id: int, db: DbSession):
             students = students_by_bs.get(bs.id, [])
             sections.append({
                 "section_name": bs.section.name,
-                "student_count": len(students),
+                "student_count": student_counts_by_bs.get(bs.id, len(students)),
                 "students": [
                     {"id": s.id, "admission_no": s.admission_no, "name": s.name}
                     for s in students
@@ -448,8 +466,6 @@ def clear_exam_results(
     """Delete OMR results and upload log. If branch_id given, clears only that branch."""
     from app.models.exam_result import ExamResult
     from app.models.exam_upload_log import ExamUploadLog
-    from app.models.student_section import StudentSection
-    from app.models.mapping import BranchSection
     exam = db.get(Exam, exam_id)
     if not exam:
         raise HTTPException(404, "Exam not found")
@@ -791,7 +807,12 @@ def upload_exam_questions(exam_id: int, db: DbSession, file: UploadFile = File(.
 # ── OMR results upload ────────────────────────────────────────────────────────
 
 @router.get("/{exam_id}/results", response_model=ExamResultsDetail)
-def get_exam_results(exam_id: int, db: DbSession):
+def get_exam_results(
+    exam_id: int,
+    db: DbSession,
+    branch_id: Optional[int] = Query(None),
+    include_responses: bool = Query(True),
+):
     """Return per-student scored responses computed on the fly from current question keys."""
     from app.models.exam_result import ExamResult
 
@@ -804,37 +825,58 @@ def get_exam_results(exam_id: int, db: DbSession):
         select(ExamQuestion).where(ExamQuestion.exam_id == exam_id).order_by(ExamQuestion.qno)
     ).all()
 
-    # All saved results
-    results = db.scalars(
-        select(ExamResult)
-        .where(ExamResult.exam_id == exam_id)
-        .order_by(ExamResult.student_id)
-    ).all()
+    branch_student_ids: list[int] | None = None
+    if branch_id is not None:
+        branch_student_ids = [
+            row.student_id
+            for row in db.execute(
+                select(StudentSection.student_id)
+                .join(BranchSection, StudentSection.branch_section_id == BranchSection.id)
+                .where(
+                    StudentSection.academic_year_id == exam.academic_year_id,
+                    BranchSection.program_id == exam.program_id,
+                    BranchSection.class_id == exam.class_id,
+                    BranchSection.branch_id == branch_id,
+                )
+            ).all()
+        ]
+
+    results_stmt = select(ExamResult).where(ExamResult.exam_id == exam_id)
+    if branch_student_ids is not None:
+        if not branch_student_ids:
+            results = []
+        else:
+            results = db.scalars(
+                results_stmt.where(ExamResult.student_id.in_(branch_student_ids)).order_by(ExamResult.student_id)
+            ).all()
+    else:
+        results = db.scalars(results_stmt.order_by(ExamResult.student_id)).all()
 
     # Fetch student info + branch in one pass
     student_ids = [r.student_id for r in results]
-    from app.models.student import Student
-    from app.models.student_section import StudentSection
-    from app.models.branch import Branch
+    from app.models.section import Section
 
     students_map: dict[int, Student] = {}
-    student_branch: dict[int, tuple[int, str]] = {}  # student_id -> (branch_id, branch_name)
+    student_branch: dict[int, tuple[int, str, str]] = {}  # student_id -> (branch_id, branch_name, section_name)
     if student_ids:
         for s in db.scalars(select(Student).where(Student.id.in_(student_ids))).all():
             students_map[s.id] = s
 
         # Fetch branch via StudentSection → BranchSection → Branch
         rows = db.execute(
-            select(StudentSection.student_id, BranchSection.branch_id, Branch.name)
+            select(StudentSection.student_id, BranchSection.branch_id, Branch.name, Section.name.label("section_name"))
             .join(BranchSection, StudentSection.branch_section_id == BranchSection.id)
             .join(Branch, BranchSection.branch_id == Branch.id)
+            .join(Section, BranchSection.section_id == Section.id)
             .where(
                 StudentSection.student_id.in_(student_ids),
                 StudentSection.academic_year_id == exam.academic_year_id,
+                BranchSection.program_id == exam.program_id,
+                BranchSection.class_id == exam.class_id,
             )
         ).all()
         for row in rows:
-            student_branch[row.student_id] = (row.branch_id, row.name)
+            student_branch[row.student_id] = (row.branch_id, row.name, row.section_name)
 
     # Build question meta list (0-indexed by position in sorted qno order)
     question_meta = [
@@ -876,7 +918,7 @@ def get_exam_results(exam_id: int, db: DbSession):
 
     def _is_unattempted(ans: int | str, qtype: str | None = None) -> bool:
         # -1000000 is the OMR sentinel for absent/unattempted
-        if ans == -1000000:
+        if str(ans).strip() == "-1000000":
             return True
         qt = (qtype or "").upper()
         # For INT, 0 is a valid answer (digit 0–9), so only -1000000 means unattempted
@@ -1011,17 +1053,18 @@ def get_exam_results(exam_id: int, db: DbSession):
                 elif q.subject == "Chemistry":
                     chem_s += awarded
 
-            responses.append(QuestionResult(
-                qno=q.qno,
-                subject=q.subject,
-                question_type=q.question_type,
-                student_answer=ans,
-                correct_answer=effective_key,
-                is_correct=is_correct,
-                marks_awarded=awarded,
-                is_bonus=q.is_bonus,
-                is_deleted=q.is_deleted,
-            ))
+            if include_responses:
+                responses.append(QuestionResult(
+                    qno=q.qno,
+                    subject=q.subject,
+                    question_type=q.question_type,
+                    student_answer=ans,
+                    correct_answer=effective_key,
+                    is_correct=is_correct,
+                    marks_awarded=awarded,
+                    is_bonus=q.is_bonus,
+                    is_deleted=q.is_deleted,
+                ))
 
         return responses, total, math_s, phys_s, chem_s, attempted, correct, wrong, unattempted
 
@@ -1039,6 +1082,7 @@ def get_exam_results(exam_id: int, db: DbSession):
             target_rank=student.target_rank,
             branch_id=branch_info[0] if branch_info else None,
             branch_name=branch_info[1] if branch_info else None,
+            section_name=branch_info[2] if branch_info else None,
             total_score=total,
             math_score=math_s,
             physics_score=phys_s,
@@ -1047,7 +1091,7 @@ def get_exam_results(exam_id: int, db: DbSession):
             correct=correct,
             wrong=wrong,
             unattempted=unattempted,
-            responses=responses,
+            responses=responses if include_responses else [],
         ))
 
     # Sort by total score descending
@@ -1096,6 +1140,28 @@ def validate_omr_file(
     seen_ids: set[str] = set()
     errors: list[str] = []
     invalid_student_ids: list[str] = []
+    invalid_reasons: dict[str, str] = {}
+
+    def _section_name(bs: BranchSection | None) -> str:
+        return getattr(getattr(bs, "section", None), "name", None) or "N/A"
+
+    def _branch_name(bs: BranchSection | None) -> str:
+        return getattr(getattr(bs, "branch", None), "name", None) or "N/A"
+
+    def _detail(
+        omr_id: str,
+        student: Student | None = None,
+        branch_section: BranchSection | None = None,
+        details: str = "",
+    ) -> OMRStudentValidationDetail:
+        return OMRStudentValidationDetail(
+            omr_id=omr_id,
+            admission_no=student.admission_no if student else "N/A",
+            name=student.name if student else "N/A",
+            branch_name=_branch_name(branch_section),
+            section_name=_section_name(branch_section),
+            details=details,
+        )
 
     import re as _re
 
@@ -1119,6 +1185,7 @@ def validate_omr_file(
         # Check for duplicates
         if omr_id in seen_ids:
             duplicate_ids.add(omr_id)
+            invalid_reasons[omr_id] = "Duplicate record in uploaded file"
             errors.append(f"Row {line_num}: duplicate OMR ID '{omr_id}'")
             continue
 
@@ -1145,33 +1212,56 @@ def validate_omr_file(
         except ValueError:
             errors.append(f"Row {line_num} ({omr_id}): invalid answer value '{ans}'")
             invalid_student_ids.append(omr_id)
+            invalid_reasons[omr_id] = f"Invalid answer value '{ans}'"
             continue
 
         records.append(OMRValidationRecord(omr_id=omr_id, answers=answers))
 
     # Validate students exist and are enrolled in the specified branch
+    duplicate_students: list[OMRStudentValidationDetail] = []
+    invalid_students: list[OMRStudentValidationDetail] = []
+    enrolled_map: dict[str, tuple[Student, BranchSection]] = {}
     if records:
         submitted_omr_ids = {r.omr_id for r in records}
-        enrolled_students = get_enrolled_students_for_exam(db, exam_id, branch_id=branch_id)
-        enrolled_map: dict[str, Student] = {}
+        enrolled_rows = db.execute(
+            select(Student, BranchSection)
+            .join(StudentSection, Student.id == StudentSection.student_id)
+            .join(BranchSection, StudentSection.branch_section_id == BranchSection.id)
+            .where(
+                StudentSection.academic_year_id == exam.academic_year_id,
+                BranchSection.program_id == exam.program_id,
+                BranchSection.class_id == exam.class_id,
+                BranchSection.branch_id == branch_id,
+            )
+        ).all()
         conflicting_omr_ids: set[str] = set()
-        for student in enrolled_students:
+        conflict_details: dict[str, list[tuple[Student, BranchSection]]] = {}
+        for student, branch_section in enrolled_rows:
             omr_id = student.admission_no[-7:]
             if omr_id in conflicting_omr_ids:
+                conflict_details.setdefault(omr_id, []).append((student, branch_section))
                 continue
             if omr_id in enrolled_map:
                 conflicting_omr_ids.add(omr_id)
-                enrolled_map.pop(omr_id, None)
+                existing = enrolled_map.pop(omr_id)
+                conflict_details[omr_id] = [existing, (student, branch_section)]
             else:
-                enrolled_map[omr_id] = student
+                enrolled_map[omr_id] = (student, branch_section)
 
         for omr_id in sorted(conflicting_omr_ids):
             invalid_student_ids.append(omr_id)
-            errors.append(f"OMR ID '{omr_id}' matches multiple enrolled students; admission numbers must have unique last 7 characters")
+            invalid_reasons[omr_id] = "OMR ID matches multiple enrolled students"
+            names = ", ".join(
+                f"{student.name} / {_section_name(branch_section)}"
+                for student, branch_section in conflict_details.get(omr_id, [])
+            )
+            suffix = f": {names}" if names else ""
+            errors.append(f"OMR ID '{omr_id}' matches multiple enrolled students{suffix}; admission numbers must have unique last 7 characters")
 
         for record in records:
             if record.omr_id not in enrolled_map:
                 invalid_student_ids.append(record.omr_id)
+                invalid_reasons[record.omr_id] = f"Student not enrolled in {exam.program.name} / {exam.class_.name}"
                 errors.append(f"OMR ID '{record.omr_id}' not enrolled in {exam.program.name} / {exam.class_.name}")
 
         # Find missing students
@@ -1180,14 +1270,61 @@ def validate_omr_file(
         absent_students = [
             OMRAbsentStudent(
                 omr_id=omr_id,
-                admission_no=enrolled_map[omr_id].admission_no,
-                name=enrolled_map[omr_id].name,
+                admission_no=enrolled_map[omr_id][0].admission_no,
+                name=enrolled_map[omr_id][0].name,
+                branch_name=_branch_name(enrolled_map[omr_id][1]),
+                section_name=_section_name(enrolled_map[omr_id][1]),
             )
             for omr_id in missing_list
         ]
+
     else:
         missing_list = []
         absent_students = []
+
+    all_problem_ids = sorted(set(duplicate_ids) | set(invalid_student_ids))
+    lookup_ids = set(all_problem_ids) - set(enrolled_map.keys())
+    lookup_map: dict[str, tuple[Student, BranchSection | None]] = {}
+    if lookup_ids:
+        student_candidates = db.scalars(select(Student)).all()
+        candidate_by_omr: dict[str, list[Student]] = {}
+        for student in student_candidates:
+            candidate_by_omr.setdefault(student.admission_no[-7:], []).append(student)
+        candidate_student_ids = [
+            matches[0].id
+            for omr_id in lookup_ids
+            if len(matches := candidate_by_omr.get(omr_id, [])) == 1
+        ]
+        section_by_student_id: dict[int, BranchSection] = {}
+        if candidate_student_ids:
+            section_rows = db.execute(
+                select(StudentSection.student_id, BranchSection)
+                .join(BranchSection, StudentSection.branch_section_id == BranchSection.id)
+                .where(
+                    StudentSection.student_id.in_(candidate_student_ids),
+                    StudentSection.academic_year_id == exam.academic_year_id,
+                )
+            ).all()
+            section_by_student_id = {student_id: branch_section for student_id, branch_section in section_rows}
+        for omr_id in lookup_ids:
+            matches = candidate_by_omr.get(omr_id, [])
+            if len(matches) == 1:
+                student = matches[0]
+                lookup_map[omr_id] = (student, section_by_student_id.get(student.id))
+
+    def _context_for(omr_id: str) -> tuple[Student | None, BranchSection | None]:
+        if omr_id in enrolled_map:
+            return enrolled_map[omr_id]
+        return lookup_map.get(omr_id, (None, None))
+
+    duplicate_students = [
+        _detail(omr_id, *_context_for(omr_id), details=invalid_reasons.get(omr_id, "Duplicate record in uploaded file"))
+        for omr_id in sorted(duplicate_ids)
+    ]
+    invalid_students = [
+        _detail(omr_id, *_context_for(omr_id), details=invalid_reasons.get(omr_id, "Student not enrolled or invalid answer data"))
+        for omr_id in sorted(set(invalid_student_ids))
+    ]
 
     return OMRValidationSummary(
         valid_count=len(records) - len(set(invalid_student_ids)),
@@ -1195,6 +1332,8 @@ def validate_omr_file(
         invalid_student_ids=sorted(list(set(invalid_student_ids))),
         missing_students=missing_list,
         absent_students=absent_students,
+        duplicate_students=duplicate_students,
+        invalid_students=invalid_students,
         errors=errors,
         file_records=records,
         program_id=exam.program_id,

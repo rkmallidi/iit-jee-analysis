@@ -1,7 +1,7 @@
 """CRUD for Student and StudentSection — all section operations are year-scoped."""
 from typing import Optional, Sequence
 
-from sqlalchemy import select
+from sqlalchemy import case, func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.models.mapping import BranchSection
@@ -81,6 +81,96 @@ def get_students(
     students = db.scalars(q.order_by(Student.admission_no).offset(skip).limit(limit)).all()
     _attach_section_mapping(db, students, academic_year_id)
     return students
+
+
+def get_students_page(
+    db: Session,
+    academic_year_id: Optional[int] = None,
+    branch_id: Optional[int] = None,
+    branch_ids: Optional[Sequence[int]] = None,
+    program_id: Optional[int] = None,
+    class_id: Optional[int] = None,
+    branch_section_id: Optional[int] = None,
+    search: Optional[str] = None,
+    skip: int = 0,
+    limit: int = 100,
+    sort_field: str = "admission_no",
+    sort_dir: str = "asc",
+) -> dict:
+    sm_join = (
+        (StudentSection.student_id == Student.id)
+        & (StudentSection.academic_year_id == academic_year_id)
+    )
+    q = (
+        select(Student)
+        .outerjoin(StudentSection, sm_join)
+        .outerjoin(BranchSection, StudentSection.branch_section_id == BranchSection.id)
+    )
+
+    if branch_section_id:
+        q = q.where(StudentSection.branch_section_id == branch_section_id)
+    if branch_id:
+        q = q.where(BranchSection.branch_id == branch_id)
+    if branch_ids:
+        q = q.where(BranchSection.branch_id.in_(branch_ids))
+    if program_id:
+        q = q.where(BranchSection.program_id == program_id)
+    if class_id:
+        q = q.where(BranchSection.class_id == class_id)
+    if search:
+        pattern = f"%{search}%"
+        q = q.where(
+            or_(
+                Student.name.ilike(pattern),
+                Student.admission_no.ilike(pattern),
+                Student.phone.ilike(pattern),
+            )
+        )
+
+    count_q = q.with_only_columns(func.count(Student.id)).order_by(None)
+    total = db.scalar(count_q) or 0
+    assigned = db.scalar(
+        q.where(StudentSection.id.is_not(None)).with_only_columns(func.count(Student.id)).order_by(None)
+    ) or 0
+    unassigned = max(total - assigned, 0)
+
+    rank_order = case(
+        (Student.target_rank == "Qualifier", 1),
+        (Student.target_rank == "Top 10000", 2),
+        (Student.target_rank == "Top 1000", 3),
+        (Student.target_rank == "Top 100", 4),
+        (Student.target_rank == "Top 10", 5),
+        else_=0,
+    )
+    sort_columns = {
+        "admission_no": [Student.admission_no],
+        "omr_id": [Student.admission_no],
+        "name": [Student.name],
+        "phone": [Student.phone],
+        "target_rank": [rank_order],
+        "section_assignment": [
+            BranchSection.branch_id,
+            BranchSection.program_id,
+            BranchSection.class_id,
+            BranchSection.section_id,
+        ],
+        "is_active": [Student.is_active],
+    }
+    columns = sort_columns.get(sort_field, [Student.admission_no])
+    direction = str(sort_dir).lower()
+    order_by = [col.desc().nullslast() if direction == "desc" else col.asc().nullslast() for col in columns]
+    order_by.append(Student.admission_no.asc())
+
+    students = db.scalars(q.order_by(*order_by).offset(skip).limit(limit)).all()
+    _attach_section_mapping(db, students, academic_year_id)
+    return {
+        "items": students,
+        "total": total,
+        "assigned": assigned,
+        "unassigned": unassigned,
+        "skip": skip,
+        "limit": limit,
+    }
 
 
 def get_student(

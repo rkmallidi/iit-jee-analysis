@@ -6,7 +6,7 @@ import {
   Download, FileSpreadsheet, Loader2, AlertCircle, CheckCircle2,
   ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight,
   ArrowDown, ArrowUp, ArrowUpDown,
-  Search, X, Pencil, Save, Plus, Star,
+  Search, X, Pencil, Save, Plus, Star, Users,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -16,12 +16,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { toast } from "@/hooks/use-toast";
 import {
-  getAcademicYears, getStudents, getBranches,
+  getAcademicYears, getStudentsPage, getBranches,
   downloadSectionTemplate, uploadSectionExcel, updateStudent,
   getBranchSections, assignStudentSection, removeStudentSection,
   createStudent,
 } from "@/lib/api";
-import type { Branch, Student, UploadResult, BranchSection } from "@/types";
+import type { AcademicYear, Branch, BranchSection, RankCategory, Student, StudentPage, UploadResult } from "@/types";
 
 // ── Helper to organize sections for cascading dropdowns ──────────────────────
 function getAvailableBranches(branchSections: BranchSection[]) {
@@ -296,7 +296,7 @@ function AddStudentModal({ onClose, onSave }: { onClose: () => void; onSave: (da
   const [selectedSectionId, setSelectedSectionId] = useState<string>("");
   const [saving, setSaving] = useState(false);
 
-  const { data: branchSections = [] } = useQuery({
+  const { data: branchSections = [] } = useQuery<BranchSection[]>({
     queryKey: ["branch-sections", selectedYear?.id],
     queryFn: () => getBranchSections({ academic_year_id: selectedYear?.id }).then(r => r.data),
     enabled: !!selectedYear?.id,
@@ -505,6 +505,7 @@ export default function StudentMappingPage() {
   const yearId = selectedYear?.id;
 
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [filterBranchId, setFilterBranchId] = useState<string>("__all__");
   const [filterProgramId, setFilterProgramId] = useState<string>("__all__");
   const [filterClassId, setFilterClassId] = useState<string>("__all__");
@@ -516,9 +517,14 @@ export default function StudentMappingPage() {
   const [editingStudent, setEditingStudent] = useState<Student | null>(null);
   const [addingStudent, setAddingStudent] = useState(false);
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(25);
+  const [pageSize, setPageSize] = useState(100);
 
-  const { data: years = [] } = useQuery({
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedSearch(search.trim()), 350);
+    return () => window.clearTimeout(timer);
+  }, [search]);
+
+  const { data: years = [] } = useQuery<AcademicYear[]>({
     queryKey: ["academic-years"],
     queryFn: () => getAcademicYears().then(r => r.data),
   });
@@ -541,11 +547,41 @@ export default function StudentMappingPage() {
     enabled: !!yearId,
   });
 
-  const { data: students = [], isLoading } = useQuery<Student[]>({
-    queryKey: ["students", yearId],
-    queryFn: () => getStudents({ academic_year_id: yearId }).then(r => r.data),
+  const skip = (page - 1) * pageSize;
+  const studentPageParams = {
+    academic_year_id: yearId,
+    branch_id: filterBranchId !== "__all__" ? filterBranchId : undefined,
+    program_id: filterProgramId !== "__all__" ? filterProgramId : undefined,
+    class_id: filterClassId !== "__all__" ? filterClassId : undefined,
+    search: debouncedSearch || undefined,
+    skip,
+    limit: pageSize,
+    sort_field: sortField,
+    sort_dir: sortDir,
+  };
+
+  const { data: studentPage, isLoading } = useQuery<StudentPage>({
+    queryKey: ["students", yearId, page, pageSize, filterBranchId, filterProgramId, filterClassId, debouncedSearch, sortField, sortDir],
+    queryFn: () => getStudentsPage(studentPageParams).then(r => r.data),
     enabled: !!yearId,
   });
+
+  const { data: yearTotalPage, isLoading: isTotalLoading } = useQuery<StudentPage>({
+    queryKey: ["students", yearId, "mapping-total"],
+    queryFn: () => getStudentsPage({
+      academic_year_id: yearId,
+      skip: 0,
+      limit: 1,
+    }).then(r => r.data),
+    enabled: !!yearId,
+  });
+
+  const students = studentPage?.items ?? [];
+  const totalStudents = studentPage?.total ?? 0;
+  const assignedCount = studentPage?.assigned ?? 0;
+  const unassignedCount = studentPage?.unassigned ?? 0;
+  const yearTotalStudents = yearTotalPage?.total ?? totalStudents;
+  const hasActiveFilters = filterBranchId !== "__all__" || filterProgramId !== "__all__" || filterClassId !== "__all__" || Boolean(search);
 
   const updateStudentMutation = useMutation({
     mutationFn: async (data: any) => {
@@ -612,9 +648,6 @@ export default function StudentMappingPage() {
     },
   });
 
-  const assigned = students.filter(s => s.section_mapping);
-  const unassigned = students.filter(s => !s.section_mapping);
-
   // Derive filter options from branchSections (cascading)
   const filterPrograms = filterBranchSections
     .filter(bs => filterBranchId === "__all__" || String(bs.branch_id) === filterBranchId)
@@ -635,68 +668,17 @@ export default function StudentMappingPage() {
       return acc;
     }, []);
 
-  const filtered = students.filter(s => {
-    const bs = s.section_mapping?.branch_section;
-    if (filterBranchId !== "__all__") {
-      if (!bs) return false;
-      if (bs.branch_id !== +filterBranchId) return false;
-    }
-    if (filterProgramId !== "__all__") {
-      if (!bs) return false;
-      if (bs.program_id !== +filterProgramId) return false;
-    }
-    if (filterClassId !== "__all__") {
-      if (!bs) return false;
-      if (bs.class_id !== +filterClassId) return false;
-    }
-    if (search) {
-      const q = search.toLowerCase();
-      return (
-        s.admission_no.toLowerCase().includes(q) ||
-        s.name.toLowerCase().includes(q) ||
-        (s.phone ?? "").includes(q)
-      );
-    }
-    return true;
-  });
-
-  const sorted = [...filtered].sort((a, b) => {
-    const sectionLabel = (s: Student) => {
-      const bs = s.section_mapping?.branch_section;
-      return [
-        bs?.branch?.name,
-        bs?.program?.name,
-        bs?.class_?.name,
-        bs?.section?.name,
-      ].filter(Boolean).join(" ");
-    };
-
-    const rankOrder = ["", "Qualifier", "Top 10000", "Top 1000", "Top 100", "Top 10"];
-    const valueFor = (s: Student) => {
-      if (sortField === "is_active") return s.is_active ? 1 : 0;
-      if (sortField === "section_assignment") return sectionLabel(s).toLowerCase();
-      if (sortField === "target_rank") return rankOrder.indexOf(s.target_rank ?? "");
-      return String(s[sortField] ?? "").toLowerCase();
-    };
-
-    const aValue = valueFor(a);
-    const bValue = valueFor(b);
-    let result = 0;
-    if (typeof aValue === "number" && typeof bValue === "number") {
-      result = aValue - bValue;
-    } else {
-      result = String(aValue).localeCompare(String(bValue), undefined, { numeric: true, sensitivity: "base" });
-    }
-    return sortDir === "asc" ? result : -result;
-  });
-
-  const totalPages = Math.max(1, Math.ceil(sorted.length / pageSize));
+  const totalPages = Math.max(1, Math.ceil(totalStudents / pageSize));
   const safePage = Math.min(page, totalPages);
-  const paginated = sorted.slice((safePage - 1) * pageSize, safePage * pageSize);
+  const paginated = students;
 
   useEffect(() => {
     setPage(1);
   }, [search, filterBranchId, filterProgramId, filterClassId, yearId, pageSize, sortField, sortDir]);
+
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages);
+  }, [page, totalPages]);
 
   const toggleSort = (field: SortField) => {
     if (sortField === field) {
@@ -732,7 +714,7 @@ export default function StudentMappingPage() {
   };
 
   const handleExportExcel = () => {
-    const rows = filtered.map(s => {
+    const rows = students.map(s => {
       const bs = s.section_mapping?.branch_section;
       return {
         "Admission No": s.admission_no,
@@ -755,7 +737,7 @@ export default function StudentMappingPage() {
     XLSX.utils.book_append_sheet(wb, ws, "Student Mapping");
     const year = selectedYear?.name.replace(/\s+/g, "_") ?? "export";
     XLSX.writeFile(wb, `student_mapping_${year}_${new Date().toISOString().slice(0, 10)}.xlsx`);
-    toast({ title: "Exported", description: `${rows.length} students exported to Excel.` });
+    toast({ title: "Exported", description: `${rows.length} students from the current page exported to Excel.` });
   };
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -788,7 +770,7 @@ export default function StudentMappingPage() {
           onChange={e => setPageSize(Number(e.target.value))}
           className="h-8 rounded border border-input bg-background px-2 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
         >
-          {[10, 25, 50, 100].map(n => (
+          {[100, 200, 500].map(n => (
             <option key={n} value={n}>{n}</option>
           ))}
         </select>
@@ -796,7 +778,7 @@ export default function StudentMappingPage() {
 
       <div className="flex items-center gap-1 text-sm">
         <span className="mr-2 text-muted-foreground">
-          {(safePage - 1) * pageSize + 1}-{Math.min(safePage * pageSize, sorted.length)} of {sorted.length}
+          {totalStudents === 0 ? 0 : (safePage - 1) * pageSize + 1}-{Math.min(safePage * pageSize, totalStudents)} of {totalStudents}
         </span>
         <Button variant="ghost" size="icon" className="h-8 w-8" disabled={safePage === 1} onClick={() => setPage(1)}>
           <ChevronsLeft className="h-4 w-4" />
@@ -820,157 +802,173 @@ export default function StudentMappingPage() {
   return (
     <div className="space-y-4">
       {/* ── Row 1: Title + Year selector ── */}
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div>
-          <h2 className="text-xl font-bold">Student Section Mapping</h2>
-          <p className="text-sm text-muted-foreground">
-            Manage student section assignments per academic year.
-          </p>
+      <div className="rounded-lg border bg-card px-3 py-2.5 shadow-sm">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div className="min-w-[260px]">
+            <h2 className="text-lg font-bold leading-tight">Student Section Mapping</h2>
+            <p className="text-xs text-muted-foreground">
+              Manage student section assignments per academic year.
+            </p>
+          </div>
+          {yearId && (
+            <div className="flex items-center gap-2 rounded-md border bg-background px-3 py-1.5">
+              <span className="flex h-8 w-8 items-center justify-center rounded-md bg-primary/10 text-primary">
+                <Users className="h-4 w-4" />
+              </span>
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  Total Students
+                </p>
+                <p className="text-xl font-bold leading-tight">
+                  {isTotalLoading ? "..." : yearTotalStudents.toLocaleString("en-IN")}
+                </p>
+              </div>
+            </div>
+          )}
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <Select
-            value={selectedYear ? String(selectedYear.id) : ""}
-            onValueChange={v => {
-              const yr = years.find(y => y.id === +v);
-              if (yr) setSelectedYear(yr);
-            }}
-          >
-            <SelectTrigger className="h-10 w-[140px]">
-              <SelectValue placeholder="Select year" />
-            </SelectTrigger>
-            <SelectContent>
-              {years.map(y => (
-                <SelectItem key={y.id} value={String(y.id)}>
-                  {y.name}{y.is_current ? " *" : ""}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Button variant="outline" onClick={handleDownloadTemplate} disabled={downloading}>
-            {downloading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
-            Template
-          </Button>
-          <Button
-            variant="outline"
-            onClick={() => fileRef.current?.click()}
-            disabled={uploading || !yearId}
-            title={!yearId ? "Select a year first" : undefined}
-          >
-            {uploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FileSpreadsheet className="mr-2 h-4 w-4" />}
-            Upload Excel
-          </Button>
-          <Button variant="outline" onClick={handleExportExcel} disabled={filtered.length === 0}>
-            <Download className="mr-2 h-4 w-4 text-emerald-600" />
-            Export Excel
-          </Button>
-          <Button
-            onClick={() => setAddingStudent(true)}
-            disabled={!yearId}
-            title={!yearId ? "Select a year first" : undefined}
-          >
-            <Plus className="mr-2 h-4 w-4" />
-            Add Student
-          </Button>
+        <div className="mt-2 grid items-center gap-3 border-t pt-2 lg:grid-cols-[minmax(200px,260px),1fr]">
+          <div>
+            <Select
+              value={selectedYear ? String(selectedYear.id) : ""}
+              onValueChange={v => {
+                const yr = years.find(y => y.id === +v);
+                if (yr) setSelectedYear(yr);
+              }}
+            >
+              <SelectTrigger className="h-9 w-full">
+                <SelectValue placeholder="Select year" />
+              </SelectTrigger>
+              <SelectContent>
+                {years.map(y => (
+                  <SelectItem key={y.id} value={String(y.id)}>
+                    {y.name}{y.is_current ? " *" : ""}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button size="sm" variant="outline" onClick={handleDownloadTemplate} disabled={downloading}>
+                {downloading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
+                Template
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => fileRef.current?.click()}
+                disabled={uploading || !yearId}
+                title={!yearId ? "Select a year first" : undefined}
+              >
+                {uploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FileSpreadsheet className="mr-2 h-4 w-4" />}
+                Upload Excel
+              </Button>
+              <Button size="sm" variant="outline" onClick={handleExportExcel} disabled={students.length === 0}>
+                <Download className="mr-2 h-4 w-4 text-emerald-600" />
+                Export Excel
+              </Button>
+              <Button
+                size="sm"
+                onClick={() => setAddingStudent(true)}
+                disabled={!yearId}
+                title={!yearId ? "Select a year first" : undefined}
+              >
+                <Plus className="mr-2 h-4 w-4" />
+                Add Student
+              </Button>
+            </div>
+          </div>
         </div>
       </div>
 
       {/* ── Row 2: Actions left · Filters right ── */}
 
-      <div className="rounded-lg border bg-card p-3">
+      <div className="rounded-lg border bg-card/80 px-3 py-2.5">
         <input ref={fileRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleFileChange} />
 
-        {/* Action buttons */}
-        <div className="hidden">
-          <Button
-            onClick={() => setAddingStudent(true)}
-            disabled={!yearId}
-            title={!yearId ? "Select a year first" : undefined}
-          >
-            <Plus className="mr-2 h-4 w-4" />
-            Add Student
-          </Button>
-          <Button
-            variant="outline"
-            onClick={() => fileRef.current?.click()}
-            disabled={uploading || !yearId}
-            title={!yearId ? "Select a year first" : undefined}
-          >
-            {uploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FileSpreadsheet className="mr-2 h-4 w-4" />}
-            Upload Excel
-          </Button>
-          <Button variant="outline" onClick={handleExportExcel} disabled={filtered.length === 0}>
-            <Download className="mr-2 h-4 w-4 text-emerald-600" />
-            Export Excel
-          </Button>
-          <Button variant="ghost" size="sm" onClick={handleDownloadTemplate} disabled={downloading} className="text-muted-foreground">
-            {downloading ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Download className="mr-1.5 h-3.5 w-3.5" />}
-            Template
-          </Button>
+        <div className="flex items-center justify-between gap-3 border-b pb-2">
+          <div>
+            <p className="text-sm font-semibold leading-tight">Filters</p>
+            <p className="text-[11px] text-muted-foreground">Branch, program, class, or search</p>
+          </div>
+          {yearId && !isLoading && (
+            <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
+              <span className="rounded border bg-background px-2 py-0.5 font-medium text-muted-foreground">
+                {assignedCount.toLocaleString("en-IN")} assigned
+              </span>
+              <span className="rounded border border-amber-200 bg-amber-50 px-2 py-0.5 font-medium text-amber-700">
+                {unassignedCount.toLocaleString("en-IN")} unassigned
+              </span>
+              {hasActiveFilters && (
+                <span className="rounded border bg-background px-2 py-0.5 font-medium text-muted-foreground">
+                  {totalStudents.toLocaleString("en-IN")} matching
+                </span>
+              )}
+            </div>
+          )}
         </div>
 
-        {/* Filters pushed to the right */}
-        <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-[1fr,1fr,1fr,1.4fr]">
-          <Select value={filterBranchId} onValueChange={v => { setFilterBranchId(v); setFilterProgramId("__all__"); setFilterClassId("__all__"); }}>
-            <SelectTrigger className="h-9 w-full min-w-[170px]">
-              <SelectValue placeholder="All branches" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="__all__">All branches</SelectItem>
-              {branches.map(b => (
-                <SelectItem key={b.id} value={String(b.id)}>{b.name}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+        <div className="mt-2 grid gap-2 sm:grid-cols-2 xl:grid-cols-[1fr,1fr,1fr,1.4fr]">
+          <div>
+            <Select value={filterBranchId} onValueChange={v => { setFilterBranchId(v); setFilterProgramId("__all__"); setFilterClassId("__all__"); }}>
+              <SelectTrigger className="h-9 w-full min-w-[170px]">
+                <SelectValue placeholder="All branches" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__all__">All branches</SelectItem>
+                {branches.map(b => (
+                  <SelectItem key={b.id} value={String(b.id)}>{b.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
 
-          <Select value={filterProgramId} onValueChange={v => { setFilterProgramId(v); setFilterClassId("__all__"); }} disabled={filterPrograms.length === 0}>
-            <SelectTrigger className="h-9 w-full min-w-[170px]">
-              <SelectValue placeholder="All programs" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="__all__">All programs</SelectItem>
-              {filterPrograms.map(p => (
-                <SelectItem key={p.id} value={String(p.id)}>{p.name}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <div>
+            <Select value={filterProgramId} onValueChange={v => { setFilterProgramId(v); setFilterClassId("__all__"); }} disabled={filterPrograms.length === 0}>
+              <SelectTrigger className="h-9 w-full min-w-[170px]">
+                <SelectValue placeholder="All programs" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__all__">All programs</SelectItem>
+                {filterPrograms.map(p => (
+                  <SelectItem key={p.id} value={String(p.id)}>{p.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
 
-          <Select value={filterClassId} onValueChange={setFilterClassId} disabled={filterClasses.length === 0}>
-            <SelectTrigger className="h-9 w-full min-w-[170px]">
-              <SelectValue placeholder="All classes" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="__all__">All classes</SelectItem>
-              {filterClasses.map(c => (
-                <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <div>
+            <Select value={filterClassId} onValueChange={setFilterClassId} disabled={filterClasses.length === 0}>
+              <SelectTrigger className="h-9 w-full min-w-[170px]">
+                <SelectValue placeholder="All classes" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__all__">All classes</SelectItem>
+                {filterClasses.map(c => (
+                  <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
 
-          <div className="relative w-full min-w-[210px]">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input
+          <div>
+            <div className="relative w-full min-w-[210px]">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
               placeholder="Search student…"
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              className="h-9 w-full pl-9"
-            />
-            {search && (
-              <button onClick={() => setSearch("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
-                <X className="h-3.5 w-3.5" />
-              </button>
-            )}
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                className="h-9 w-full pl-9 pr-9"
+              />
+              {search && (
+                <button onClick={() => setSearch("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
           </div>
         </div>
       </div>
-
-      {/* ── Summary strip ── */}
-      {yearId && !isLoading && (
-        <p className="text-sm text-muted-foreground">
-          {assigned.length} assigned · <span className="text-amber-600 font-medium">{unassigned.length} unassigned</span>
-          {(filterBranchId !== "__all__" || filterProgramId !== "__all__" || filterClassId !== "__all__" || search) ? ` · ${filtered.length} shown` : ""}
-          {selectedYear && <span className="ml-2 text-muted-foreground/60">— {selectedYear.name}</span>}
-        </p>
-      )}
 
       {/* No year selected */}
       {!yearId && (
@@ -984,13 +982,13 @@ export default function StudentMappingPage() {
       {/* Table */}
       {yearId && (
         <Card>
-          {!isLoading && filtered.length > 0 && paginationBar("top")}
+          {!isLoading && totalStudents > 0 && paginationBar("top")}
           <CardContent className="p-0">
             {isLoading ? (
               <div className="flex items-center justify-center py-20">
                 <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
               </div>
-            ) : filtered.length === 0 ? (
+            ) : students.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-20 text-center">
                 <FileSpreadsheet className="h-10 w-10 text-muted-foreground/30 mb-3" />
                 <p className="font-medium text-muted-foreground">No students found</p>
@@ -1088,7 +1086,7 @@ export default function StudentMappingPage() {
               </div>
             )}
           </CardContent>
-          {!isLoading && filtered.length > 0 && paginationBar("bottom")}
+          {!isLoading && totalStudents > 0 && paginationBar("bottom")}
         </Card>
       )}
 

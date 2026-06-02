@@ -90,12 +90,12 @@ export const getAcademicYears = () => request("/academic-years");
 export const getCurrentAcademicYear = () => request("/academic-years/current");
 export const setCurrentAcademicYear = (id: number) => request(`/academic-years/${id}/set-current`, { method: "POST" });
 export const getExams = (params?: Record<string, any>) => request(withQuery("/exams", params));
-export const getExamDetail = (id: number) => request(`/exams/${id}/detail`);
-export const getExamResults = (id: number) => request(`/exams/${id}/results`);
+export const getExamDetail = (id: number, params?: Record<string, any>) => request(withQuery(`/exams/${id}/detail`, params));
+export const getExamResults = (id: number, params?: Record<string, any>) => request(withQuery(`/exams/${id}/results`, params));
 export const createExam = (data: any) => request("/exams", { method: "POST", body: JSON.stringify(data) });
 export const updateExam = (id: number, data: any) => request(`/exams/${id}`, { method: "PATCH", body: JSON.stringify(data) });
 export const updateExamMas = (id: number, math: number | null, physics: number | null, chemistry: number | null) =>
-  updateExam(id, { mas_math: math, mas_physics: physics, mas_chemistry: chemistry });
+  updateExam(id, { mas_mathematics: math, mas_physics: physics, mas_chemistry: chemistry });
 export const deleteExam = (id: number) => request(`/exams/${id}`, { method: "DELETE" });
 export const publishExam = (id: number) => request(`/exams/${id}/publish`, { method: "POST" });
 export const unpublishExam = (id: number) => request(`/exams/${id}/unpublish`, { method: "POST" });
@@ -119,6 +119,7 @@ export const getCommandCenter = (academicYearId?: number) =>
   request(withQuery("/analytics/command-center", { academic_year_id: academicYearId }));
 
 export const getStudents = (params?: Record<string, any>) => request(withQuery("/students", params));
+export const getStudentsPage = (params?: Record<string, any>) => request(withQuery("/students/page", params));
 export const createStudent = (data: any) => request("/students", { method: "POST", body: JSON.stringify(data) });
 export const updateStudent = (id: number, data: any) => request(`/students/${id}`, { method: "PATCH", body: JSON.stringify(data) });
 export const deleteStudent = (id: number) => request(`/students/${id}`, { method: "DELETE" });
@@ -223,7 +224,14 @@ export const deleteFacultySectionMapping = (id: number) => request(`/faculty-sec
 const withQuery = (path: string, params?: Record<string, any>) => {
   const qs = new URLSearchParams();
   Object.entries(params ?? {}).forEach(([key, value]) => {
-    if (value !== undefined && value !== null && value !== "") qs.set(key, String(value));
+    if (value === undefined || value === null || value === "") return;
+    if (Array.isArray(value)) {
+      value.forEach(item => {
+        if (item !== undefined && item !== null && item !== "") qs.append(key, String(item));
+      });
+      return;
+    }
+    qs.set(key, String(value));
   });
   const query = qs.toString();
   return query ? `${path}?${query}` : path;

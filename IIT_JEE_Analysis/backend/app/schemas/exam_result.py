@@ -35,6 +35,7 @@ class StudentResult(BaseModel):
     target_rank: Optional[str]
     branch_id: Optional[int]
     branch_name: Optional[str]
+    section_name: Optional[str]
     total_score: float
     math_score: float
     physics_score: float
@@ -62,6 +63,17 @@ class OMRAbsentStudent(BaseModel):
     omr_id: str
     admission_no: str
     name: str
+    branch_name: str = "N/A"
+    section_name: str = "N/A"
+
+
+class OMRStudentValidationDetail(BaseModel):
+    omr_id: str
+    admission_no: str = "N/A"
+    name: str = "N/A"
+    branch_name: str = "N/A"
+    section_name: str = "N/A"
+    details: str = ""
 
 
 class OMRValidationSummary(BaseModel):
@@ -71,6 +83,8 @@ class OMRValidationSummary(BaseModel):
     invalid_student_ids: list[str]
     missing_students: list[str]  # Enrolled but not in file
     absent_students: list[OMRAbsentStudent] = []
+    duplicate_students: list[OMRStudentValidationDetail] = []
+    invalid_students: list[OMRStudentValidationDetail] = []
     errors: list[str]
     file_records: list[OMRValidationRecord]
     program_id: int

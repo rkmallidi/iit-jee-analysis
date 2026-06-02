@@ -8,14 +8,15 @@ import {
   Plus, Search, Pencil, Trash2, Loader2,
   FileSpreadsheet, Download, X, CheckCircle2, AlertCircle,
   ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight,
-  ArrowUpDown, ArrowUp, ArrowDown, RotateCcw,
+  ArrowUpDown, ArrowUp, ArrowDown, RotateCcw, Users,
 } from "lucide-react";
 
 import {
-  getStudents, createStudent, updateStudent, deleteStudent,
+  getStudentsPage, createStudent, updateStudent, deleteStudent,
   studentHasHistory, reactivateStudent, uploadStudentsExcel, downloadStudentsTemplate,
 } from "@/lib/api";
 import { useAuthStore } from "@/store/auth";
+import { useAcademicYearStore } from "@/store/academicYear";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -23,7 +24,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { toast } from "@/hooks/use-toast";
-import type { Student, UploadResult } from "@/types";
+import type { Student, StudentPage, UploadResult } from "@/types";
 
 // ── Schema ─────────────────────────────────────────────────────────────────────
 const studentSchema = z.object({
@@ -152,7 +153,7 @@ function UploadResultDialog({ result, onClose }: { result: UploadResult; onClose
 type SortField = "name" | "admission_no" | "omr_id" | "is_active";
 type SortDir   = "asc" | "desc";
 
-const PAGE_SIZE_OPTIONS = [10, 25, 50, 100];
+const PAGE_SIZE_OPTIONS = [100, 200, 500];
 
 const getOmrId = (student: Student) => student.omr_id || student.admission_no.slice(-7);
 
@@ -161,12 +162,14 @@ export default function StudentsPage() {
   const qc = useQueryClient();
   const fileRef = useRef<HTMLInputElement>(null);
   const { isAdmin, branchIds } = useAuthStore();
+  const { selectedYear } = useAcademicYearStore();
 
   const [search, setSearch]           = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [sortField, setSortField]     = useState<SortField>("name");
   const [sortDir, setSortDir]         = useState<SortDir>("asc");
   const [page, setPage]               = useState(1);
-  const [pageSize, setPageSize]       = useState(25);
+  const [pageSize, setPageSize]       = useState(100);
 
   const [dialogOpen, setDialogOpen]     = useState(false);
   const [editItem, setEditItem]         = useState<Student | null>(null);
@@ -177,43 +180,60 @@ export default function StudentsPage() {
   const [uploading, setUploading]       = useState(false);
   const [downloading, setDownloading]   = useState(false);
 
-  const { data: allStudents = [], isLoading } = useQuery({
-    queryKey: ["students"],
-    queryFn: () => getStudents().then(r => r.data),
+  useEffect(() => {
+    const handle = window.setTimeout(() => setDebouncedSearch(search.trim()), 350);
+    return () => window.clearTimeout(handle);
+  }, [search]);
+
+  const adminUser = isAdmin();
+  const canLoadStudents = adminUser || (Boolean(selectedYear?.id) && branchIds.length > 0);
+  const skip = (page - 1) * pageSize;
+  const { data: studentPage, isLoading } = useQuery<StudentPage>({
+    queryKey: ["students", "master", selectedYear?.id, branchIds, page, pageSize, debouncedSearch, sortField, sortDir],
+    queryFn: () => getStudentsPage({
+      academic_year_id: adminUser ? undefined : selectedYear?.id,
+      branch_ids: adminUser ? undefined : branchIds,
+      search: debouncedSearch || undefined,
+      skip,
+      limit: pageSize,
+      sort_field: sortField,
+      sort_dir: sortDir,
+    }).then(r => r.data),
+    enabled: canLoadStudents,
   });
 
-  // Branch filter for non-admins
-  const students = isAdmin()
-    ? allStudents
-    : allStudents.filter(s =>
-        s.section_mapping?.branch_section?.branch_id != null &&
-        branchIds.includes(s.section_mapping.branch_section.branch_id)
-      );
+  const { data: systemTotalPage, isLoading: isTotalLoading } = useQuery<StudentPage>({
+    queryKey: ["students", "system-total", selectedYear?.id, branchIds],
+    queryFn: () => getStudentsPage({
+      academic_year_id: adminUser ? undefined : selectedYear?.id,
+      branch_ids: adminUser ? undefined : branchIds,
+      skip: 0,
+      limit: 1,
+    }).then(r => r.data),
+    enabled: canLoadStudents,
+  });
+
+  const students = studentPage?.items ?? [];
 
   // Search → sort → paginate (inactive students are shown, dimmed)
-  const filtered = students.filter(s => {
-    if (!search) return true;
-    const q = search.toLowerCase();
-    return s.admission_no.toLowerCase().includes(q) || getOmrId(s).toLowerCase().includes(q) || s.name.toLowerCase().includes(q) || (s.phone ?? "").includes(q);
-  });
-
-  const sorted = [...filtered].sort((a, b) => {
-    if (sortField === "is_active") {
-      // Active (true=1) before Inactive (false=0) when asc
-      const diff = (b.is_active ? 1 : 0) - (a.is_active ? 1 : 0);
-      return sortDir === "asc" ? diff : -diff;
-    }
-    const valA = sortField === "omr_id" ? getOmrId(a).toLowerCase() : a[sortField].toLowerCase();
-    const valB = sortField === "omr_id" ? getOmrId(b).toLowerCase() : b[sortField].toLowerCase();
-    return sortDir === "asc" ? valA.localeCompare(valB) : valB.localeCompare(valA);
-  });
-
-  const totalPages = Math.max(1, Math.ceil(sorted.length / pageSize));
+  const totalStudents = studentPage?.total ?? 0;
+  const systemTotalStudents = systemTotalPage?.total ?? totalStudents;
+  const totalPages = Math.max(1, Math.ceil(totalStudents / pageSize));
   const safePage   = Math.min(page, totalPages);
-  const paginated  = sorted.slice((safePage - 1) * pageSize, safePage * pageSize);
+  const pageStart = totalStudents === 0 ? 0 : (safePage - 1) * pageSize + 1;
+  const pageEnd = Math.min(safePage * pageSize, totalStudents);
+  const visiblePages = Array.from(new Set([1, safePage - 1, safePage, safePage + 1, totalPages]))
+    .filter(p => p >= 1 && p <= totalPages)
+    .sort((a, b) => a - b)
+    .reduce<(number | "...")[]>((acc, p) => {
+      const prev = acc[acc.length - 1];
+      if (typeof prev === "number" && p - prev > 1) acc.push("...");
+      acc.push(p);
+      return acc;
+    }, []);
 
   // Reset to page 1 when search or sort changes
-  useEffect(() => { setPage(1); }, [search, sortField, sortDir, pageSize]);
+  useEffect(() => { setPage(1); }, [debouncedSearch, sortField, sortDir, pageSize]);
 
   const toggleSort = (field: SortField) => {
     if (sortField === field) {
@@ -298,7 +318,7 @@ export default function StudentsPage() {
   };
 
   const handleExportExcel = () => {
-    const rows = filtered.map(s => ({
+    const rows = students.map(s => ({
       "Admission No":  s.admission_no,
       "OMR ID":        getOmrId(s),
       "Name":          s.name,
@@ -317,18 +337,35 @@ export default function StudentsPage() {
     XLSX.utils.book_append_sheet(wb, ws, "Students");
     const date = new Date().toISOString().slice(0, 10);
     XLSX.writeFile(wb, `students_export_${date}.xlsx`);
-    toast({ title: "Exported", description: `${rows.length} students exported to Excel.` });
+    toast({ title: "Exported", description: `${rows.length} students from the current page exported to Excel.` });
   };
 
   return (
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
-        <div>
-          <h2 className="text-xl font-bold">Students</h2>
-          <p className="text-sm text-muted-foreground">
-            {students.filter(s => s.is_active).length} active · {students.filter(s => !s.is_active).length} inactive
-          </p>
+        <div className="flex items-center gap-4 flex-wrap">
+          <div>
+            <h2 className="text-xl font-bold">Students</h2>
+            <p className="text-sm text-muted-foreground">
+              {debouncedSearch
+                ? `${totalStudents.toLocaleString("en-IN")} matching search`
+                : `Showing ${pageStart}-${pageEnd}`}
+            </p>
+          </div>
+          <div className="flex items-center gap-3 rounded-md border bg-card px-4 py-2 shadow-sm">
+            <span className="flex h-9 w-9 items-center justify-center rounded-md bg-primary/10 text-primary">
+              <Users className="h-5 w-5" />
+            </span>
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                {adminUser ? "Total Students in System" : "Total Students"}
+              </p>
+              <p className="text-2xl font-bold leading-tight">
+                {isTotalLoading ? "..." : systemTotalStudents.toLocaleString("en-IN")}
+              </p>
+            </div>
+          </div>
         </div>
         <div className="flex gap-2">
           <input ref={fileRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleFileChange} />
@@ -340,7 +377,7 @@ export default function StudentsPage() {
             {uploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FileSpreadsheet className="mr-2 h-4 w-4" />}
             Upload Excel
           </Button>
-          <Button variant="outline" onClick={handleExportExcel} disabled={filtered.length === 0}>
+          <Button variant="outline" onClick={handleExportExcel} disabled={students.length === 0}>
             <Download className="mr-2 h-4 w-4 text-emerald-600" />
             Export Excel
           </Button>
@@ -373,7 +410,7 @@ export default function StudentsPage() {
             <div className="flex items-center justify-center py-20">
               <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
             </div>
-          ) : filtered.length === 0 ? (
+          ) : students.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-20 text-center">
               <FileSpreadsheet className="h-10 w-10 text-muted-foreground/30 mb-3" />
               <p className="font-medium text-muted-foreground">No students found</p>
@@ -425,7 +462,7 @@ export default function StudentsPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y">
-                    {paginated.map(s => (
+                    {students.map(s => (
                       <tr key={s.id} className={`hover:bg-muted/20 transition-colors ${!s.is_active ? "opacity-50" : ""}`}>
                         <td className="px-5 py-3">
                           <code className="text-xs font-mono font-semibold bg-muted px-2 py-0.5 rounded">
@@ -501,7 +538,7 @@ export default function StudentsPage() {
                 {/* Page info + controls */}
                 <div className="flex items-center gap-1 text-sm">
                   <span className="text-muted-foreground mr-2">
-                    {(safePage - 1) * pageSize + 1}–{Math.min(safePage * pageSize, sorted.length)} of {sorted.length}
+                    {pageStart}-{pageEnd} of {totalStudents.toLocaleString("en-IN")}
                   </span>
                   <Button variant="ghost" size="icon" className="h-8 w-8" disabled={safePage === 1} onClick={() => setPage(1)}>
                     <ChevronsLeft className="h-4 w-4" />
@@ -511,15 +548,8 @@ export default function StudentsPage() {
                   </Button>
 
                   {/* Page number pills */}
-                  {Array.from({ length: totalPages }, (_, i) => i + 1)
-                    .filter(p => p === 1 || p === totalPages || Math.abs(p - safePage) <= 1)
-                    .reduce<(number | "…")[]>((acc, p, i, arr) => {
-                      if (i > 0 && (p as number) - (arr[i - 1] as number) > 1) acc.push("…");
-                      acc.push(p);
-                      return acc;
-                    }, [])
-                    .map((p, i) =>
-                      p === "…" ? (
+                  {visiblePages.map((p, i) =>
+                      p === "..." ? (
                         <span key={`ellipsis-${i}`} className="px-1 text-muted-foreground">…</span>
                       ) : (
                         <Button

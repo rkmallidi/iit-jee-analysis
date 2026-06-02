@@ -107,24 +107,44 @@ export default function OMRUploadDialog({ exam, branchId, branchName, open, onOp
     if (!validation) return;
     const absent = validation.absent_students?.length
       ? validation.absent_students
-      : validation.missing_students.map(omr_id => ({ omr_id, admission_no: "", name: "" }));
+      : validation.missing_students.map(omr_id => ({ omr_id, admission_no: "", name: "", branch_name: "N/A", section_name: "N/A" }));
     downloadCsv(
       `${exam.exam_code}_${exam.paper}_${branchName}_absent_students.csv`,
-      ["OMR ID", "Admission No", "Name"],
-      absent.map(s => [s.omr_id, s.admission_no, s.name])
+      ["OMR ID", "Admission No", "Name", "Branch", "Section"],
+      absent.map(s => [s.omr_id, s.admission_no, s.name, s.branch_name ?? "N/A", s.section_name ?? "N/A"])
     );
   };
 
   const downloadErrorRecords = () => {
     if (!validation) return;
+    const duplicateDetails = validation.duplicate_students?.length
+      ? validation.duplicate_students
+      : validation.duplicate_ids.map(id => ({
+          omr_id: id,
+          admission_no: "N/A",
+          name: "N/A",
+          branch_name: "N/A",
+          section_name: "N/A",
+          details: "Duplicate record in uploaded file",
+        }));
+    const invalidDetails = validation.invalid_students?.length
+      ? validation.invalid_students
+      : validation.invalid_student_ids.map(id => ({
+          omr_id: id,
+          admission_no: "N/A",
+          name: "N/A",
+          branch_name: "N/A",
+          section_name: "N/A",
+          details: "Student not enrolled or invalid answer data",
+        }));
     const rows = [
-      ...validation.errors.map(error => ["Validation Error", "", error]),
-      ...validation.duplicate_ids.map(id => ["Duplicate OMR ID", id, "Duplicate record in uploaded file"]),
-      ...validation.invalid_student_ids.map(id => ["Invalid OMR ID", id, "Student not enrolled or invalid answer data"]),
+      ...validation.errors.map(error => ["Validation Error", "", "N/A", "N/A", "N/A", "N/A", error]),
+      ...duplicateDetails.map(s => ["Duplicate OMR ID", s.omr_id, s.admission_no, s.name, s.branch_name, s.section_name, s.details]),
+      ...invalidDetails.map(s => ["Invalid OMR ID", s.omr_id, s.admission_no, s.name, s.branch_name, s.section_name, s.details]),
     ];
     downloadCsv(
       `${exam.exam_code}_${exam.paper}_${branchName}_error_records.csv`,
-      ["Type", "OMR ID", "Details"],
+      ["Type", "OMR ID", "Admission No", "Name", "Branch", "Section", "Details"],
       rows
     );
   };
@@ -276,11 +296,12 @@ export default function OMRUploadDialog({ exam, branchId, branchName, open, onOp
                     <div className="text-xs space-y-1 max-h-32 overflow-y-auto">
                       {(validation.absent_students?.length
                         ? validation.absent_students
-                        : validation.missing_students.map(omr_id => ({ omr_id, admission_no: "", name: "" }))
+                        : validation.missing_students.map(omr_id => ({ omr_id, admission_no: "", name: "", section_name: "N/A" }))
                       ).slice(0, 15).map((student, i) => (
                         <div key={i}>
                           {student.admission_no || student.omr_id}
                           {student.name ? ` - ${student.name}` : ""}
+                          {student.section_name ? ` (${student.section_name})` : ""}
                         </div>
                       ))}
                       {validation.missing_students.length > 15 && (
