@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { Eye, EyeOff, Loader2 } from "lucide-react";
+import { AlertCircle, Eye, EyeOff, Loader2 } from "lucide-react";
 
 import { login, me, meContext } from "@/lib/api";
 import { useAuthStore } from "@/store/auth";
@@ -13,7 +13,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { toast } from "@/hooks/use-toast";
 
 const schema = z.object({
   username: z.string().min(1, "Username is required"),
@@ -27,6 +26,7 @@ export default function LoginPage() {
   const { title, subtitle, logoUrl } = useBrandStore();
   const { applyTheme } = useThemeStore();
   const [showPwd, setShowPwd] = useState(false);
+  const [loginError, setLoginError] = useState<string | null>(null);
 
   const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<FormData>({
     resolver: zodResolver(schema),
@@ -34,6 +34,7 @@ export default function LoginPage() {
 
   const onSubmit = async (data: FormData) => {
     try {
+      setLoginError(null);
       const { data: tokens } = await login(data.username, data.password);
       setTokens(tokens.access_token, tokens.refresh_token);
       const [{ data: user }, { data: ctx }] = await Promise.all([me(), meContext()]);
@@ -82,7 +83,7 @@ export default function LoginPage() {
                          !user.roles.some((r: { name: string }) => ["Admin", "Dean", "Principal", "Vice-Principal"].includes(r.name));
       navigate(isOperator ? "/results" : "/");
     } catch {
-      toast({ title: "Login failed", description: "Invalid username or password.", variant: "destructive" });
+      setLoginError("Invalid username or password.");
     }
   };
 
@@ -150,6 +151,16 @@ export default function LoginPage() {
                   <p className="text-xs text-destructive">{errors.password.message}</p>
                 )}
               </div>
+
+              {loginError && (
+                <div className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                  <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                  <div>
+                    <p className="font-semibold">Login failed</p>
+                    <p className="text-xs">{loginError}</p>
+                  </div>
+                </div>
+              )}
 
               <Button type="submit" className="w-full h-11 text-base" disabled={isSubmitting}>
                 {isSubmitting ? (

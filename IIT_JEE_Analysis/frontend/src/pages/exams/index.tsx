@@ -21,7 +21,7 @@ import {
   getAcademicYears, getPrograms, getClasses, getBranches,
   getStudents, getExams, createExam, updateExam, updateExamMas, deleteExam, getExamQuestions,
   publishExam, unpublishExam, completeExam, reopenExam, clearExamResults,
-  evaluateExam, getEvaluationStatus,
+  evaluateExam, clearExamEvaluation, getEvaluationStatus,
 } from "@/lib/api";
 import type { Branch, Class, Exam, ExamStatus, ExamType, Program, Student, ExamQuestion, EvaluationStatus } from "@/types";
 import { cn } from "@/lib/utils";
@@ -240,6 +240,7 @@ interface ExamCardProps {
 function ExamCard({ le, progMap, classMap, branches, students, questions, allQuestionsData, yearId, canEdit, canUpload, onEdit, onDelete, onUpload, onEvaluate }: ExamCardProps) {
   const navigate = useNavigate();
   const qc = useQueryClient();
+  const [clearEvaluationOpen, setClearEvaluationOpen] = useState(false);
   const meta = TYPE_META[le.rep.exam_type];
   const statusMeta = STATUS_META[le.rep.status ?? "draft"];
   const program = progMap[le.rep.program_id];
@@ -321,15 +322,34 @@ function ExamCard({ le, progMap, classMap, branches, students, questions, allQue
     mutationFn: () => evaluateExam(le.rep.id),
     onSuccess: (res) => {
       qc.invalidateQueries({ queryKey: ["eval-status", le.rep.id] });
+      qc.invalidateQueries({ queryKey: ["evaluated-exams"] });
+      qc.invalidateQueries({ queryKey: ["command-center"] });
       const s = res.data;
       toast({ title: `Evaluation complete — ${s.total_evaluated} students evaluated` });
     },
     onError: onMutateError,
   });
 
-  const isBusy = publishMut.isPending || unpublishMut.isPending || completeMut.isPending || reopenMut.isPending || clearResultsMut.isPending || evaluateMut.isPending;
+  const clearEvaluationMut = useMutation({
+    mutationFn: () => clearExamEvaluation(le.rep.id),
+    onSuccess: (res) => {
+      qc.invalidateQueries({ queryKey: ["eval-status", le.rep.id] });
+      qc.invalidateQueries({ queryKey: ["evaluated-exams"] });
+      qc.invalidateQueries({ queryKey: ["command-center"] });
+      qc.invalidateQueries({ queryKey: ["student-report"] });
+      const s = res.data;
+      toast({
+        title: "Evaluation cleared",
+        description: `${s.deleted_evaluations ?? 0} paper rows and ${s.deleted_cumulative_evaluations ?? 0} cumulative rows removed.`,
+      });
+    },
+    onError: onMutateError,
+  });
+
+  const isBusy = publishMut.isPending || unpublishMut.isPending || completeMut.isPending || reopenMut.isPending || clearResultsMut.isPending || evaluateMut.isPending || clearEvaluationMut.isPending;
 
   return (
+    <>
     <Card className={cn(
       "group overflow-hidden border-0 shadow-sm hover:shadow-lg transition-all duration-200 bg-white dark:bg-slate-900",
       status === "completed" && "opacity-80"
@@ -463,6 +483,19 @@ function ExamCard({ le, progMap, classMap, branches, students, questions, allQue
                       {evaluateMut.isPending
                         ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
                         : <FlaskConical className="h-3.5 w-3.5" />
+                      }
+                    </button>
+                  )}
+                  {canEdit && evalStatus?.evaluated && (
+                    <button
+                      onClick={() => !isBusy && setClearEvaluationOpen(true)}
+                      title="Clear Evaluation"
+                      disabled={isBusy}
+                      className="rounded-md p-1.5 text-muted-foreground hover:text-red-600 hover:bg-red-50 transition-colors disabled:opacity-50"
+                    >
+                      {clearEvaluationMut.isPending
+                        ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        : <Eraser className="h-3.5 w-3.5" />
                       }
                     </button>
                   )}
@@ -642,6 +675,15 @@ function ExamCard({ le, progMap, classMap, branches, students, questions, allQue
         </div>
       </CardContent>
     </Card>
+    <ConfirmDialog
+      open={clearEvaluationOpen}
+      title="Clear Evaluation"
+      description={`Clear computed evaluations for "${le.rep.exam_code}"? OMR results will remain, but ranks, MI, analytics and student report entries for this exam will be removed until evaluation is run again.`}
+      confirmLabel="Clear Evaluation"
+      onConfirm={() => clearEvaluationMut.mutate()}
+      onCancel={() => setClearEvaluationOpen(false)}
+    />
+    </>
   );
 }
 

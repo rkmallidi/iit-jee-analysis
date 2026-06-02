@@ -12,16 +12,20 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { getAcademicYears, getExams, getExamDetail, getPrograms, getClasses, clearExamResults } from "@/lib/api";
+import { getAcademicYears, getExams, getExamDetail, getPrograms, getClasses, clearExamResults, getExamResults } from "@/lib/api";
 import { toast } from "@/hooks/use-toast";
 import OMRUploadDialog from "@/components/exams/OMRUploadDialog";
-import type { Exam, ExamDetail, BranchDetail, BranchSectionDetail, UploadLog } from "@/types";
+import type { Exam, ExamDetail, BranchDetail, BranchSectionDetail, UploadLog, ExamResultsDetail } from "@/types";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/store/auth";
 
 // ── small helpers ──────────────────────────────────────────────────────────────
 const fmt = (d: string) =>
   new Date(d).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+
+function fmtScore(n: number) {
+  return n % 1 === 0 ? String(n) : n.toFixed(1);
+}
 
 // ── students popup ─────────────────────────────────────────────────────────────
 interface StudentsDialogProps {
@@ -78,6 +82,97 @@ function StudentsDialog({ section, branchName, loading = false, onClose }: Stude
 }
 
 // ── per-branch upload summary panel ───────────────────────────────────────────
+function BranchMasSummary({ paper, branchId }: { paper: Exam; branchId: number }) {
+  const shimmer = "relative overflow-hidden bg-slate-100 before:absolute before:inset-0 before:-translate-x-full before:animate-[shimmer_1.4s_infinite] before:bg-gradient-to-r before:from-transparent before:via-white/70 before:to-transparent";
+  const mas = {
+    math: paper.mas_mathematics ?? null,
+    physics: paper.mas_physics ?? null,
+    chemistry: paper.mas_chemistry ?? null,
+  };
+  const hasMas = mas.math != null || mas.physics != null || mas.chemistry != null;
+
+  const { data, isLoading } = useQuery<ExamResultsDetail>({
+    queryKey: ["exam-results", paper.id, "branch-mas-summary", branchId],
+    queryFn: () => getExamResults(paper.id, { branch_id: branchId, include_responses: false }).then(r => r.data),
+    enabled: hasMas,
+    staleTime: 60_000,
+  });
+
+  if (!hasMas) {
+    return (
+      <div className="ml-6 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] text-muted-foreground">
+        MAS values are not defined for this paper.
+      </div>
+    );
+  }
+
+  const students = data?.students ?? [];
+  const rows = [
+    {
+      label: "Mathematics",
+      short: "Math",
+      color: "text-blue-700",
+      mas: mas.math,
+      reached: mas.math != null ? students.filter(s => s.math_score >= mas.math!).length : null,
+    },
+    {
+      label: "Physics",
+      short: "Phys",
+      color: "text-purple-700",
+      mas: mas.physics,
+      reached: mas.physics != null ? students.filter(s => s.physics_score >= mas.physics!).length : null,
+    },
+    {
+      label: "Chemistry",
+      short: "Chem",
+      color: "text-green-700",
+      mas: mas.chemistry,
+      reached: mas.chemistry != null ? students.filter(s => s.chemistry_score >= mas.chemistry!).length : null,
+    },
+  ];
+
+  return (
+    <div className="ml-6 rounded-md border border-slate-200 bg-white overflow-hidden">
+      <div className="flex items-center justify-between gap-2 bg-slate-50 px-3 py-1.5 border-b">
+        <span className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">MAS Summary</span>
+        {isLoading ? (
+          <span className={cn("inline-block h-3 w-20 rounded", shimmer)} />
+        ) : (
+          <span className="text-[10px] text-muted-foreground">{students.length} result{students.length !== 1 ? "s" : ""}</span>
+        )}
+      </div>
+      <table className="compact-table w-full text-[11px]">
+        <thead>
+          <tr className="text-muted-foreground">
+            <th className="px-3 py-1.5 text-left font-semibold">Subject</th>
+            <th className="px-3 py-1.5 text-center font-semibold">MAS</th>
+            <th className="px-3 py-1.5 text-center font-semibold">Reached MAS</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y">
+          {rows.map(row => (
+            <tr key={row.label}>
+              <td className={cn("px-3 py-1.5 font-bold", row.color)}>{row.short}</td>
+              <td className="px-3 py-1.5 text-center font-semibold">
+                {row.mas != null ? fmtScore(row.mas) : <span className="italic text-muted-foreground/40">-</span>}
+              </td>
+              <td className="px-3 py-1.5 text-center">
+                {row.reached != null ? (
+                  <span className="inline-flex items-center justify-center rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700">
+                    {isLoading ? <span className={cn("inline-block h-2.5 w-8 rounded", shimmer)} /> : `${row.reached}/${students.length}`}
+                  </span>
+                ) : (
+                  <span className="italic text-muted-foreground/40">-</span>
+                )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 interface BranchUploadPanelProps {
   paper: Exam;
   branch: BranchDetail;
@@ -86,7 +181,7 @@ interface BranchUploadPanelProps {
   onClear: () => void;
   onShowStudents: (section: BranchSectionDetail) => void;
 }
-function BranchUploadPanel({ paper: _paper, branch, log, onUpload, onClear, onShowStudents }: BranchUploadPanelProps) {
+function BranchUploadPanel({ paper, branch, log, onUpload, onClear, onShowStudents }: BranchUploadPanelProps) {
   const totalStudents = branch.sections.reduce((s, sec) => s + sec.student_count, 0);
 
   return (
@@ -180,6 +275,8 @@ function BranchUploadPanel({ paper: _paper, branch, log, onUpload, onClear, onSh
                 {log.invalid_count} Invalid
               </div>
             </div>
+
+            <BranchMasSummary paper={paper} branchId={branch.id} />
 
             {/* Progress bar */}
             {(() => {

@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Building2, Download, Loader2, Star, X } from "lucide-react";
+import { useSearchParams } from "react-router-dom";
+import { Building2, Download, Star, X } from "lucide-react";
 import * as XLSX from "xlsx";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Badge } from "@/components/ui/badge";
@@ -15,11 +16,12 @@ const SUBJ_COLOR: Record<string, string> = {
 };
 
 const RANK_TIERS = ["Qualifier", "Top 10000", "Top 1000", "Top 100", "Top 10"];
+const BLANK_ANSWER_SENTINELS = new Set(["-1000000", "-20000", "-2000000"]);
 
 function isUnattemptedAnswer(ans: number | string, questionType?: string | null) {
   const value = String(ans).trim();
-  if (value === "-1000000") return true;
-  if ((questionType || "").toUpperCase() === "INT") return false;
+  if (BLANK_ANSWER_SENTINELS.has(value)) return true;
+  if (["INT", "DECIMAL"].includes((questionType || "").toUpperCase())) return false;
   return value === "0";
 }
 
@@ -36,7 +38,7 @@ function displayAnswer(r: { is_deleted: boolean; student_answer: number | string
   if (r.is_deleted) return "-";
   if (isUnattemptedAnswer(r.student_answer, r.question_type)) return "Blank";
   if (r.is_deleted) return "—";
-  if (r.student_answer === -1000000 || r.student_answer === 0) return "·";
+  if (BLANK_ANSWER_SENTINELS.has(String(r.student_answer).trim()) || r.student_answer === 0) return "·";
   return String(r.student_answer);
 }
 
@@ -44,13 +46,58 @@ function fmt(n: number) {
   return n % 1 === 0 ? String(n) : n.toFixed(1);
 }
 
+function displayTotal(student: StudentResult) {
+  return student.math_score + student.physics_score + student.chemistry_score;
+}
+
 // Sticky column offsets
 const OFF_RANK    = "left-0";
 const OFF_STUDENT = "left-8";
 const OFF_SECTION = "left-[148px]";
 const OFF_TOTAL   = "left-[248px]";
+const OFF_MATH    = "left-[300px]";
+const OFF_PHYSICS = "left-[344px]";
+const OFF_CHEM    = "left-[388px]";
 const W_SECTION   = "min-w-[96px]";
 const W_TOTAL     = "min-w-[52px]";
+const W_SUBJECT   = "min-w-[44px]";
+const SHIMMER = "relative overflow-hidden bg-slate-100 before:absolute before:inset-0 before:-translate-x-full before:animate-[shimmer_1.4s_infinite] before:bg-gradient-to-r before:from-transparent before:via-white/70 before:to-transparent";
+
+function ResultsTableSkeleton() {
+  return (
+    <div className="min-w-full w-max">
+      <div className="sticky top-0 z-20 border-b-2 border-slate-200 bg-slate-50">
+        <div className="flex border-b border-slate-200">
+          {[36, 140, 96, 52, 44, 44, 44, ...Array(24).fill(28)].map((width, i) => (
+            <div key={i} className="border-r border-slate-100 px-1 py-1.5" style={{ width }}>
+              <div className={cn("h-3 rounded", SHIMMER)} />
+            </div>
+          ))}
+        </div>
+        <div className="flex bg-emerald-600">
+          {[36, 140, 96, 52, 44, 44, 44, ...Array(24).fill(28)].map((width, i) => (
+            <div key={i} className="border-r border-emerald-500 px-1 py-1.5" style={{ width }}>
+              <div className="h-3 rounded bg-emerald-400/70" />
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div>
+        {Array.from({ length: 12 }).map((_, row) => (
+          <div key={row} className="flex border-b border-slate-100 bg-white">
+            {[36, 140, 96, 52, 44, 44, 44, ...Array(24).fill(28)].map((width, col) => (
+              <div key={col} className="border-r border-slate-50 px-1 py-2" style={{ width }}>
+                <div className={cn("h-3 rounded", SHIMMER, col === 1 ? "w-24" : "w-full")} />
+                {col === 1 && <div className={cn("h-2 w-16 rounded mt-1", SHIMMER)} />}
+              </div>
+            ))}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 function StudentRow({ student, questions, rank, maxScores }: {
   student: StudentResult;
@@ -58,6 +105,21 @@ function StudentRow({ student, questions, rank, maxScores }: {
   rank: number;
   maxScores: { math: number; physics: number; chemistry: number };
 }) {
+  const totalScore = displayTotal(student);
+  const scoreBadge = (
+    score: number,
+    maxScore: number,
+    topClass: string,
+    textClass: string,
+  ) => (
+    <span className={cn(
+      "inline-flex min-w-8 items-center justify-center rounded px-1.5 py-0.5",
+      score === maxScore && maxScore > 0 ? `${topClass} text-white` : textClass
+    )}>
+      {fmt(score)}
+    </span>
+  );
+
   return (
     <tr className="border-b hover:bg-muted/30 group">
       <td className={cn("sticky z-10 bg-white group-hover:bg-muted/30 px-2 py-1.5 text-[10px] text-muted-foreground text-center border-r border-slate-100 w-8", OFF_RANK)}>
@@ -77,28 +139,16 @@ function StudentRow({ student, questions, rank, maxScores }: {
         {student.section_name ?? "—"}
       </td>
       <td className={cn("sticky z-10 bg-white group-hover:bg-muted/30 px-2 py-1.5 text-center border-r border-slate-200", OFF_TOTAL, W_TOTAL)}>
-        <span className="text-sm font-bold text-foreground">{fmt(student.total_score)}</span>
+        <span className="text-sm font-bold text-foreground">{fmt(totalScore)}</span>
       </td>
-      <td className={cn("px-2 py-1.5 text-center border-r border-slate-100 text-[11px] font-semibold min-w-[44px]",
-        student.math_score === maxScores.math && maxScores.math > 0
-          ? "bg-blue-600 text-white rounded"
-          : "text-blue-600"
-      )}>
-        {fmt(student.math_score)}
+      <td className={cn("sticky z-10 bg-white group-hover:bg-muted/30 px-1.5 py-1.5 text-center border-r border-slate-100 text-[11px] font-semibold", OFF_MATH, W_SUBJECT)}>
+        {scoreBadge(student.math_score, maxScores.math, "bg-blue-600", "text-blue-600")}
       </td>
-      <td className={cn("px-2 py-1.5 text-center border-r border-slate-100 text-[11px] font-semibold min-w-[44px]",
-        student.physics_score === maxScores.physics && maxScores.physics > 0
-          ? "bg-purple-600 text-white rounded"
-          : "text-purple-600"
-      )}>
-        {fmt(student.physics_score)}
+      <td className={cn("sticky z-10 bg-white group-hover:bg-muted/30 px-1.5 py-1.5 text-center border-r border-slate-100 text-[11px] font-semibold", OFF_PHYSICS, W_SUBJECT)}>
+        {scoreBadge(student.physics_score, maxScores.physics, "bg-purple-600", "text-purple-600")}
       </td>
-      <td className={cn("px-2 py-1.5 text-center border-r border-slate-200 text-[11px] font-semibold min-w-[44px]",
-        student.chemistry_score === maxScores.chemistry && maxScores.chemistry > 0
-          ? "bg-green-600 text-white rounded"
-          : "text-green-600"
-      )}>
-        {fmt(student.chemistry_score)}
+      <td className={cn("sticky z-10 bg-white group-hover:bg-muted/30 px-1.5 py-1.5 text-center border-r border-slate-200 text-[11px] font-semibold", OFF_CHEM, W_SUBJECT)}>
+        {scoreBadge(student.chemistry_score, maxScores.chemistry, "bg-green-600", "text-green-600")}
       </td>
       {student.responses.map((r, i) => (
         <td key={i} className={cn("px-1 py-1.5 text-center text-[10px] min-w-[28px] border-r border-slate-50", CellBg(r))}>
@@ -120,21 +170,24 @@ interface ResultsDrawerProps {
 }
 
 export default function ResultsDrawer({ examId, examCode, paper, mas, open, onClose, initialBranchFilter }: ResultsDrawerProps) {
-  const [branchFilter, setBranchFilter] = useState<string>(initialBranchFilter ?? "all");
-  const isBranchLocked = !!initialBranchFilter && initialBranchFilter !== "all";
+  const [searchParams] = useSearchParams();
+  const queryBranchFilter = searchParams.get("branchid") ?? searchParams.get("branch_id") ?? undefined;
+  const lockedBranchFilter = initialBranchFilter ?? queryBranchFilter;
+  const [branchFilter, setBranchFilter] = useState<string>(lockedBranchFilter ?? "all");
+  const isBranchLocked = !!lockedBranchFilter && lockedBranchFilter !== "all";
   const branchParam = isBranchLocked
-    ? initialBranchFilter
+    ? lockedBranchFilter
     : branchFilter !== "all"
       ? branchFilter
       : undefined;
 
   useEffect(() => {
-    setBranchFilter(initialBranchFilter ?? "all");
-  }, [initialBranchFilter, open]);
+    setBranchFilter(lockedBranchFilter ?? "all");
+  }, [lockedBranchFilter, open]);
 
   const { data, isLoading, error } = useQuery<ExamResultsDetail>({
     queryKey: ["exam-results", examId, branchParam],
-    queryFn: () => getExamResults(examId!, { branch_id: branchParam }).then(r => r.data),
+    queryFn: () => getExamResults(examId!, { branch_id: branchParam, include_responses: true }).then(r => r.data),
     enabled: open && !!examId,
     staleTime: 0,
   });
@@ -150,8 +203,10 @@ export default function ResultsDrawer({ examId, examCode, paper, mas, open, onCl
 
   const filtered = useMemo(() => {
     if (!data) return [];
-    if (branchFilter === "all") return data.students;
-    return data.students.filter(s => String(s.branch_id) === branchFilter);
+    const students = branchFilter === "all"
+      ? data.students
+      : data.students.filter(s => String(s.branch_id) === branchFilter);
+    return [...students].sort((a, b) => displayTotal(b) - displayTotal(a));
   }, [data, branchFilter]);
 
   const maxScores = useMemo(() => {
@@ -164,8 +219,38 @@ export default function ResultsDrawer({ examId, examCode, paper, mas, open, onCl
   }, [filtered]);
 
   const subjects = ["Mathematics", "Physics", "Chemistry"];
+  const masRows = [
+    {
+      key: "math",
+      label: "Math",
+      value: mas.math,
+      color: "text-blue-700",
+      bg: "bg-blue-50",
+      border: "border-blue-200",
+      count: mas.math != null ? filtered.filter(s => s.math_score >= mas.math!).length : null,
+    },
+    {
+      key: "physics",
+      label: "Physics",
+      value: mas.physics,
+      color: "text-purple-700",
+      bg: "bg-purple-50",
+      border: "border-purple-200",
+      count: mas.physics != null ? filtered.filter(s => s.physics_score >= mas.physics!).length : null,
+    },
+    {
+      key: "chemistry",
+      label: "Chem",
+      value: mas.chemistry,
+      color: "text-green-700",
+      bg: "bg-green-50",
+      border: "border-green-200",
+      count: mas.chemistry != null ? filtered.filter(s => s.chemistry_score >= mas.chemistry!).length : null,
+    },
+  ];
+  const hasMas = masRows.some(row => row.value != null);
   const selectedBranchName = isBranchLocked
-    ? branches.find(([id]) => id === initialBranchFilter)?.[1] ?? filtered[0]?.branch_name ?? "Selected Branch"
+    ? branches.find(([id]) => id === lockedBranchFilter)?.[1] ?? filtered[0]?.branch_name ?? "Selected Branch"
     : branchFilter === "all"
       ? "All Branches"
       : branches.find(([id]) => id === branchFilter)?.[1] ?? "Selected Branch";
@@ -180,7 +265,7 @@ export default function ResultsDrawer({ examId, examCode, paper, mas, open, onCl
         Name: student.name,
         Section: student.section_name ?? "N/A",
         "Target Rank": student.target_rank ?? "",
-        Total: student.total_score,
+        Total: displayTotal(student),
         Mathematics: student.math_score,
         Physics: student.physics_score,
         Chemistry: student.chemistry_score,
@@ -218,6 +303,9 @@ export default function ResultsDrawer({ examId, examCode, paper, mas, open, onCl
       { Field: "MAS Mathematics", Value: mas.math ?? "" },
       { Field: "MAS Physics", Value: mas.physics ?? "" },
       { Field: "MAS Chemistry", Value: mas.chemistry ?? "" },
+      { Field: ">= MAS Count Mathematics", Value: masRows.find(row => row.key === "math")?.count ?? "" },
+      { Field: ">= MAS Count Physics", Value: masRows.find(row => row.key === "physics")?.count ?? "" },
+      { Field: ">= MAS Count Chemistry", Value: masRows.find(row => row.key === "chemistry")?.count ?? "" },
     ];
 
     const wb = XLSX.utils.book_new();
@@ -250,17 +338,6 @@ export default function ResultsDrawer({ examId, examCode, paper, mas, open, onCl
                   {filtered.length}/{data.students.length} students · {data.questions.filter(q => !q.is_deleted).length} Qs
                 </span>
               )}
-              {/* MAS badges */}
-              {[
-                { label: "M", value: mas.math,     bg: "bg-blue-50",   border: "border-blue-200",   text: "text-blue-700",   star: "text-blue-400"   },
-                { label: "P", value: mas.physics,  bg: "bg-purple-50", border: "border-purple-200", text: "text-purple-700", star: "text-purple-400" },
-                { label: "C", value: mas.chemistry,bg: "bg-green-50",  border: "border-green-200",  text: "text-green-700",  star: "text-green-400"  },
-              ].filter(m => m.value != null).map(m => (
-                <span key={m.label} className={cn("inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[11px] font-semibold shrink-0", m.bg, m.border, m.text)}>
-                  <Star className={cn("w-2.5 h-2.5 fill-current", m.star)} />
-                  {m.label} {m.value}
-                </span>
-              ))}
             </div>
             <div className="flex items-center gap-1.5 shrink-0">
               <button
@@ -276,6 +353,30 @@ export default function ResultsDrawer({ examId, examCode, paper, mas, open, onCl
               </button>
             </div>
           </div>
+
+          {hasMas && (
+            <div className="flex items-center gap-2 flex-wrap pt-2">
+              <span className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">MAS</span>
+              {masRows.map(row => (
+                <span
+                  key={row.key}
+                  className={cn("inline-flex items-center gap-2 rounded-full border px-2.5 py-0.5 text-[11px] font-semibold", row.bg, row.border, row.color)}
+                >
+                  <span>{row.label}</span>
+                  <span className="font-mono">Value {row.value != null ? fmt(row.value) : "-"}</span>
+                  <span className="h-3 w-px bg-current opacity-20" />
+                  <span className="font-mono">
+                    {">="} MAS{" "}
+                    {row.count != null ? (
+                      isLoading ? <span className={cn("inline-block h-2.5 w-8 rounded align-middle", SHIMMER)} /> : `${row.count}/${filtered.length}`
+                    ) : (
+                      "-"
+                    )}
+                  </span>
+                </span>
+              ))}
+            </div>
+          )}
 
           {/* Branch filter chips */}
           {!isBranchLocked && branches.length > 1 && (
@@ -318,9 +419,7 @@ export default function ResultsDrawer({ examId, examCode, paper, mas, open, onCl
 
         <div className="flex-1 overflow-auto">
           {isLoading && (
-            <div className="flex items-center justify-center h-full">
-              <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
-            </div>
+            <ResultsTableSkeleton />
           )}
           {error && (
             <div className="flex items-center justify-center h-full text-destructive text-sm">
@@ -343,7 +442,12 @@ export default function ResultsDrawer({ examId, examCode, paper, mas, open, onCl
                   <th className={cn("sticky z-30 bg-slate-50 px-2 py-1.5 text-left text-[10px] font-bold text-muted-foreground border-r border-slate-200", OFF_SECTION, W_SECTION)}>Section</th>
                   <th className={cn("sticky z-30 bg-slate-50 px-2 py-1.5 text-[10px] font-bold text-muted-foreground border-r border-slate-300", OFF_TOTAL, W_TOTAL)}>Total</th>
                   {subjects.map(s => (
-                    <th key={s} className={cn("px-2 py-1.5 text-[10px] font-bold border-r border-slate-200 min-w-[44px]", SUBJ_COLOR[s])}>
+                    <th key={s} className={cn(
+                      "sticky z-30 bg-slate-50 px-2 py-1.5 text-[10px] font-bold border-r border-slate-200",
+                      W_SUBJECT,
+                      s === "Mathematics" ? OFF_MATH : s === "Physics" ? OFF_PHYSICS : OFF_CHEM,
+                      SUBJ_COLOR[s]
+                    )}>
                       {s.slice(0, 4)}
                     </th>
                   ))}
@@ -364,7 +468,16 @@ export default function ResultsDrawer({ examId, examCode, paper, mas, open, onCl
                   <td className={cn("sticky z-30 bg-emerald-600 px-3 py-1.5 text-[10px] font-bold text-white border-r border-emerald-500", OFF_STUDENT)}>Answer Key</td>
                   <td className={cn("sticky z-30 bg-emerald-600 px-2 py-1.5 border-r border-emerald-500", OFF_SECTION, W_SECTION)} />
                   <td className={cn("sticky z-30 bg-emerald-600 px-2 py-1.5 border-r border-emerald-500", OFF_TOTAL, W_TOTAL)} />
-                  {subjects.map(s => <td key={s} className="bg-emerald-600 px-2 py-1.5 border-r border-emerald-500" />)}
+                  {subjects.map(s => (
+                    <td
+                      key={s}
+                      className={cn(
+                        "sticky z-30 bg-emerald-600 px-2 py-1.5 border-r border-emerald-500",
+                        W_SUBJECT,
+                        s === "Mathematics" ? OFF_MATH : s === "Physics" ? OFF_PHYSICS : OFF_CHEM
+                      )}
+                    />
+                  ))}
                   {data.questions.map(q => {
                     const key = q.akc || q.bkc;
                     return (

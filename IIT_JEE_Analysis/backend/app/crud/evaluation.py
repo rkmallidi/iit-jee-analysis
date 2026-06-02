@@ -22,6 +22,7 @@ from app.models.user import User
 _LETTER_TO_NUM = {"A": "1", "B": "2", "C": "3", "D": "4"}
 _NUMERIC_QTYPES = {"INT", "DECIMAL"}
 _MULTI_QTYPES = {"MCQ"}
+_BLANK_ANSWER_SENTINELS = {"-1000000", "-20000", "-2000000"}
 
 
 def _normalise_answer_key(key: str, question_type: str | None = None) -> str:
@@ -50,10 +51,10 @@ def _key_options(key: str) -> frozenset[str]:
 
 
 def _is_unattempted(ans: int | str, qtype: str | None = None) -> bool:
-    if ans == -1000000:
+    if str(ans).strip() in _BLANK_ANSWER_SENTINELS:
         return True
     qt = (qtype or "").upper()
-    if qt == "INT":
+    if qt in {"INT", "DECIMAL"}:
         return False
     return ans == 0 or str(ans).strip() == "0"
 

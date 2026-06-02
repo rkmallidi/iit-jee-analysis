@@ -10,9 +10,9 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { getAcademicYears, getExams, getExamDetail, getExamResults, getPrograms, getClasses } from "@/lib/api";
+import { getAcademicYears, getExams, getExamDetail, getExamQuestions, getExamResults, getPrograms, getClasses } from "@/lib/api";
 import ResultsDrawer from "@/components/exams/ResultsDrawer";
-import type { Exam, ExamDetail, ExamResultsDetail, StudentResult } from "@/types";
+import type { Exam, ExamDetail, ExamQuestion, ExamResultsDetail, StudentResult } from "@/types";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/store/auth";
 
@@ -26,6 +26,40 @@ function avg(nums: number[]) {
 
 function fmtScore(n: number) {
   return n % 1 === 0 ? String(n) : n.toFixed(1);
+}
+
+const DIFF_WEIGHTS: Record<string, number> = { Easy: 1, Medium: 2, Hard: 3, "Very Hard": 4 };
+const DIFF_LABELS = [
+  { max: 1.5, label: "Easy", className: "bg-emerald-50 text-emerald-700 border-emerald-200" },
+  { max: 2.5, label: "Medium", className: "bg-amber-50 text-amber-700 border-amber-200" },
+  { max: 3.5, label: "Hard", className: "bg-orange-50 text-orange-700 border-orange-200" },
+  { max: Infinity, label: "Very Hard", className: "bg-red-50 text-red-700 border-red-200" },
+];
+
+function difficultyMeta(avgValue: number) {
+  return DIFF_LABELS.find(item => avgValue < item.max) ?? DIFF_LABELS[DIFF_LABELS.length - 1];
+}
+
+function Stars({ avg: value, size = 10 }: { avg: number; size?: number }) {
+  const color = value < 1.5 ? "text-emerald-500" : value < 2.5 ? "text-amber-500" : value < 3.5 ? "text-orange-600" : "text-red-700";
+  return (
+    <div className="flex gap-0.5">
+      {[1, 2, 3, 4].map(i => (
+        <span key={i} className={i <= Math.round(value) ? color : "text-muted-foreground/20"} style={{ fontSize: size }}>★</span>
+      ))}
+    </div>
+  );
+}
+
+function difficultyStats(questions: ExamQuestion[]) {
+  const active = questions.filter(q => !q.is_deleted && !q.is_bonus && q.difficulty && q.difficulty in DIFF_WEIGHTS);
+  const overall = avg(active.map(q => DIFF_WEIGHTS[q.difficulty!]));
+  const bySubject = ["Mathematics", "Physics", "Chemistry"].map(subject => {
+    const subjectQuestions = active.filter(q => q.subject === subject);
+    const value = avg(subjectQuestions.map(q => DIFF_WEIGHTS[q.difficulty!]));
+    return { subject, value, count: subjectQuestions.length };
+  });
+  return { overall, count: active.length, bySubject };
 }
 
 // ── Branch summary card ────────────────────────────────────────────────────────
@@ -371,6 +405,26 @@ export default function BranchResultsPage() {
     ? allExams.filter(e => e.exam_code === examDetail.exam_code && (e.status === "published" || e.status === "completed"))
     : [];
 
+  const { data: questionsByPaper = {} } = useQuery<Record<number, ExamQuestion[]>>({
+    queryKey: ["branch-results-paper-questions", examPapers.map(p => p.id).join(",")],
+    queryFn: async () => {
+      const entries = await Promise.all(
+        examPapers.map(async paper => {
+          const res = await getExamQuestions(paper.id);
+          return [paper.id, res.data as ExamQuestion[]] as const;
+        })
+      );
+      return Object.fromEntries(entries);
+    },
+    enabled: examPapers.length > 0,
+    staleTime: 60_000,
+  });
+
+  const paperDifficulty = examPapers.map(paper => ({
+    paper,
+    stats: difficultyStats(questionsByPaper[paper.id] ?? []),
+  }));
+
   // All unique branches across papers — only those with students configured, filtered by role
   const branchSummaries = useMemo(() => {
     return (examDetail?.branches ?? [])
@@ -563,6 +617,52 @@ export default function BranchResultsPage() {
             {examDetail.exam_type} · {isAdvanced ? "P1 + P2" : "P1"}
           </Badge>
         </div>
+        {paperDifficulty.length > 0 && (
+          <div className="basis-full border-t border-slate-200/70 pt-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                Paper Difficulty
+              </span>
+              {paperDifficulty.map(({ paper, stats }) => {
+                const overallMeta = difficultyMeta(stats.overall);
+                return (
+                  <div key={paper.id} className="flex flex-wrap items-center gap-1.5 rounded-lg border bg-white/70 px-2.5 py-1.5">
+                    <span className={cn(
+                      "rounded px-1.5 py-0.5 text-[10px] font-bold text-white",
+                      paper.paper === "P1" ? "bg-emerald-600" : "bg-amber-500"
+                    )}>
+                      {paper.paper}
+                    </span>
+                    <span className={cn("inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-bold", overallMeta.className)}>
+                      Overall
+                      {stats.count ? (
+                        <>
+                          <Stars avg={stats.overall} size={10} />
+                          <span>{overallMeta.label}</span>
+                        </>
+                      ) : "-"}
+                    </span>
+                    {stats.bySubject.map(({ subject, value, count }) => {
+                      const meta = difficultyMeta(value);
+                      const short = subject === "Mathematics" ? "Math" : subject === "Physics" ? "Phys" : "Chem";
+                      return (
+                        <span key={subject} className={cn("inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold", count ? meta.className : "bg-slate-50 text-muted-foreground border-slate-200")}>
+                          {short}
+                          {count ? (
+                            <>
+                              <Stars avg={value} size={10} />
+                              <span>{meta.label}</span>
+                            </>
+                          ) : "-"}
+                        </span>
+                      );
+                    })}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Per-paper branch cards */}

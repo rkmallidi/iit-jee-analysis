@@ -28,7 +28,7 @@ class ExamResult(Base):
     student_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("students.id", ondelete="CASCADE"), nullable=False, index=True
     )
-    answers: Mapped[str] = mapped_column(String, nullable=False)  # CSV of answers (0-4, -1000000 for unanswered)
+    answers: Mapped[str] = mapped_column(String, nullable=False)  # CSV of answers; blank sentinels include -1000000, -20000, -2000000
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),

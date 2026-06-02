@@ -51,6 +51,7 @@ _NUMERIC_QTYPES = {"INT", "DECIMAL"}
 _MULTI_QTYPES = {"MCQ"}
 # All recognised question type codes (stored uppercased)
 _VALID_QTYPES = {"SCQ", "MCQ", "INT", "DECIMAL"}
+_BLANK_ANSWER_SENTINELS = {"-1000000", "-20000", "-2000000"}
 
 
 def _normalise_answer_key(key: str, question_type: str | None = None) -> str:
@@ -542,6 +543,32 @@ def evaluate_exam(exam_id: int, db: DbSession):
     return summary
 
 
+@router.delete("/{exam_id}/evaluation", dependencies=[admin_only])
+def clear_exam_evaluation(exam_id: int, db: DbSession):
+    """Delete computed evaluation rows for this logical exam, preserving OMR results."""
+    from app.models.student_evaluation import StudentEvaluation, StudentCumulativeEvaluation
+
+    exam = db.get(Exam, exam_id)
+    if not exam:
+        raise HTTPException(404, "Exam not found")
+
+    sibling_ids = [s.id for s in _siblings(db, exam)]
+    deleted_eval = db.execute(
+        StudentEvaluation.__table__.delete().where(StudentEvaluation.exam_id.in_(sibling_ids))
+    )
+    deleted_cumulative = db.execute(
+        StudentCumulativeEvaluation.__table__.delete().where(
+            StudentCumulativeEvaluation.p1_exam_id.in_(sibling_ids)
+        )
+    )
+    db.commit()
+
+    return {
+        "deleted_evaluations": deleted_eval.rowcount or 0,
+        "deleted_cumulative_evaluations": deleted_cumulative.rowcount or 0,
+    }
+
+
 @router.get("/{exam_id}/evaluation/status")
 def get_evaluation_status(exam_id: int, db: DbSession):
     """Return whether this exam has been evaluated and when."""
@@ -917,14 +944,14 @@ def get_exam_results(
         return result
 
     def _is_unattempted(ans: int | str, qtype: str | None = None) -> bool:
-        # -1000000 is the OMR sentinel for absent/unattempted
-        if str(ans).strip() == "-1000000":
+        # OMR sentinel values for absent/unattempted answers.
+        if str(ans).strip() in _BLANK_ANSWER_SENTINELS:
             return True
         qt = (qtype or "").upper()
-        # For INT, 0 is a valid answer (digit 0–9), so only -1000000 means unattempted
-        if qt == "INT":
+        # For INT/DECIMAL, 0 is a valid answer, so only sentinels mean unattempted.
+        if qt in {"INT", "DECIMAL"}:
             return False
-        # For SCQ/MCQ/DECIMAL: 0 or "0" means no selection (unattempted)
+        # For SCQ/MCQ: 0 or "0" means no selection (unattempted)
         return ans == 0 or str(ans).strip() == "0"
 
     def _key_options(key: str) -> frozenset[str]:
@@ -1197,8 +1224,8 @@ def validate_omr_file(
             answers: list[int | str] = []
             for i, ans in enumerate(answers_raw):
                 qt = qtypes[i] if i < len(qtypes) else ""
-                if ans == "-1000000":
-                    answers.append(-1000000)
+                if ans in _BLANK_ANSWER_SENTINELS:
+                    answers.append(int(ans))
                 elif qt == "MCQ":
                     # MCQ: concatenated letters "BCD" or digits "234" → pipe-separated "2|3|4"
                     answers.append(_normalise_answer_key(ans, "MCQ"))

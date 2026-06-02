@@ -6,6 +6,7 @@ from sqlalchemy.orm import aliased
 
 from app.api.deps import DbSession
 from app.models.exam import Exam, EXAM_STATUS_DRAFT, EXAM_STATUS_PUBLISHED, EXAM_STATUS_COMPLETED
+from app.models.exam_question import ExamQuestion
 from app.models.exam_result import ExamResult
 from app.models.student_evaluation import StudentEvaluation, StudentCumulativeEvaluation
 from app.models.student import Student
@@ -14,6 +15,7 @@ from app.models.mapping import BranchSection, FacultySection
 from app.models.branch import Branch
 from app.models.section import Section
 from app.models.user import User
+from app.crud.evaluation import _is_unattempted, _parse_answers, _score_question
 
 router = APIRouter(prefix="/analytics", tags=["analytics"])
 
@@ -427,6 +429,7 @@ def student_report(
             "attempted":      e.attempted,
             "correct":        e.correct,
             "wrong":          e.wrong,
+            "partial":        max(e.attempted - e.correct - e.wrong, 0),
             "unattempted":    e.unattempted,
             "math_attempted": e.math_attempted, "math_correct": e.math_correct, "math_wrong": e.math_wrong,
             "physics_attempted": e.physics_attempted, "physics_correct": e.physics_correct, "physics_wrong": e.physics_wrong,
@@ -460,6 +463,88 @@ def student_report(
             "above_mi_total":  c.above_mi_total,
         })
 
+    # Cumulative subject/topic/sub-topic mistakes for weakness analysis.
+    topic_mistake_map: dict[tuple[str, str, str], dict] = {}
+    exam_ids = [e.exam_id for e in evals]
+    if exam_ids:
+        question_rows = db.scalars(
+            select(ExamQuestion)
+            .where(ExamQuestion.exam_id.in_(exam_ids))
+            .order_by(ExamQuestion.exam_id, ExamQuestion.qno)
+        ).all()
+        questions_by_exam: dict[int, list[ExamQuestion]] = {}
+        for q in question_rows:
+            questions_by_exam.setdefault(q.exam_id, []).append(q)
+
+        result_rows = db.scalars(
+            select(ExamResult)
+            .where(
+                ExamResult.student_id == student_id,
+                ExamResult.exam_id.in_(exam_ids),
+            )
+        ).all()
+
+        for result in result_rows:
+            questions = questions_by_exam.get(result.exam_id, [])
+            if not questions:
+                continue
+            answers = _parse_answers(result.answers, questions)
+
+            for i, q in enumerate(questions):
+                if q.is_deleted or q.is_bonus:
+                    continue
+
+                ans = answers[i] if i < len(answers) else 0
+                marks = float(q.marks or 0)
+                awarded = 0.0
+                status: str | None = None
+
+                if _is_unattempted(ans, q.question_type):
+                    status = "blank"
+                else:
+                    effective_key = q.akc if q.akc else q.bkc
+                    if not effective_key:
+                        continue
+                    awarded, is_correct = _score_question(
+                        ans,
+                        effective_key,
+                        q.question_type,
+                        marks,
+                        float(q.negative_marks or 0),
+                        float(q.partial_marks or 0),
+                    )
+                    if is_correct is True:
+                        continue
+                    status = "wrong" if is_correct is False else "partial"
+
+                subject = q.subject or "Unknown"
+                topic = q.topic or "Unspecified"
+                sub_topic = q.sub_topic or "Unspecified"
+                row = topic_mistake_map.setdefault(
+                    (subject, topic, sub_topic),
+                    {
+                        "subject": subject,
+                        "topic": topic,
+                        "sub_topic": sub_topic,
+                        "mistakes": 0,
+                        "wrong": 0,
+                        "partial": 0,
+                        "blank": 0,
+                        "lost_marks": 0.0,
+                    },
+                )
+                row["mistakes"] += 1
+                row[status] += 1
+                row["lost_marks"] += max(0.0, marks - awarded)
+
+    topic_mistakes = sorted(
+        topic_mistake_map.values(),
+        key=lambda r: (r["mistakes"], r["lost_marks"]),
+        reverse=True,
+    )
+    for row in topic_mistakes:
+        row["lost_marks"] = round(row["lost_marks"], 2)
+
     # Subject averages across all exams
     def subj_avg(attr):
         vals = [getattr(e, attr) for e in evals]
@@ -480,8 +565,14 @@ def student_report(
         "Physics":     subj_avg("physics_percentage"),
         "Chemistry":   subj_avg("chemistry_percentage"),
     }
-    best_subject  = max(subj_avgs, key=lambda k: subj_avgs[k]) if evals else None
-    worst_subject = min(subj_avgs, key=lambda k: subj_avgs[k]) if evals else None
+    if evals:
+        max_avg = max(subj_avgs.values())
+        min_avg = min(subj_avgs.values())
+        best_subject = max(subj_avgs, key=lambda k: subj_avgs[k]) if max_avg > min_avg else None
+        worst_subject = min(subj_avgs, key=lambda k: subj_avgs[k]) if min_avg < max_avg else None
+    else:
+        best_subject = None
+        worst_subject = None
 
     # Branch from each evaluation, with the most recent eval used for the student summary.
     branch_names = {b.id: b.name for b in db.scalars(select(Branch)).all()}
@@ -504,6 +595,7 @@ def student_report(
         "history":          history,
         "cumulative_history": cum_history,
         "subject_summary":  subject_summary,
+        "topic_mistakes":   topic_mistakes,
         "best_subject":     best_subject,
         "worst_subject":    worst_subject,
         "total_exams":      len(set(e.exam_code for e in evals)),

@@ -102,6 +102,7 @@ export const unpublishExam = (id: number) => request(`/exams/${id}/unpublish`, {
 export const completeExam = (id: number) => request(`/exams/${id}/complete`, { method: "POST" });
 export const reopenExam = (id: number) => request(`/exams/${id}/reopen`, { method: "POST" });
 export const evaluateExam = (id: number) => request(`/exams/${id}/evaluate`, { method: "POST" });
+export const clearExamEvaluation = (id: number) => request(`/exams/${id}/evaluation`, { method: "DELETE" });
 export const getEvaluationStatus = (id: number) => request(`/exams/${id}/evaluation/status`);
 export const clearExamResults = (id: number, branchId?: number) =>
   request(withQuery(`/exams/${id}/results`, { branch_id: branchId }), { method: "DELETE" });

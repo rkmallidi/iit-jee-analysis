@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
-  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, CartesianGrid,
+  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, CartesianGrid, LabelList,
   RadarChart, PolarGrid, PolarAngleAxis, Radar,
   PieChart, Pie, Legend,
 } from "recharts";
@@ -46,6 +46,37 @@ function RankChange({ val }: { val: number | null }) {
   if (val < 0) return <span className="flex items-center gap-0.5 text-xs text-emerald-600 font-semibold"><ChevronUp className="h-3.5 w-3.5" />{Math.abs(val)}</span>;
   if (val > 0) return <span className="flex items-center gap-0.5 text-xs text-rose-500 font-semibold"><ChevronDown className="h-3.5 w-3.5" />{val}</span>;
   return <Minus className="h-3.5 w-3.5 text-muted-foreground mx-auto" />;
+}
+
+function RadarValueLabel(props: any) {
+  const { x, y, value } = props;
+  if (x == null || y == null || value == null) return null;
+  return (
+    <text
+      x={x}
+      y={y - 8}
+      textAnchor="middle"
+      className="fill-foreground text-[11px] font-semibold"
+    >
+      {Number(value).toFixed(1)}
+    </text>
+  );
+}
+
+function PercentileBandLabel(props: any) {
+  const { name, value, percent, x, y } = props;
+  if (!value || x == null || y == null) return null;
+  return (
+    <text
+      x={x}
+      y={y}
+      textAnchor="middle"
+      dominantBaseline="central"
+      className="fill-foreground text-[10px] font-semibold"
+    >
+      {`${name}: ${value} (${(percent * 100).toFixed(0)}%)`}
+    </text>
+  );
 }
 
 export default function AnalyticsPage() {
@@ -209,12 +240,14 @@ export default function AnalyticsPage() {
                 </CardHeader>
                 <CardContent className="h-56">
                   <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={perf.score_distribution} margin={{ top: 5, right: 10, left: -20, bottom: 0 }}>
+                    <BarChart data={perf.score_distribution} margin={{ top: 18, right: 10, left: -20, bottom: 0 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
                       <XAxis dataKey="range" tick={{ fontSize: 10 }} />
                       <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
                       <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }} formatter={(v) => [v, "Students"]} />
-                      <Bar dataKey="count" fill="#3b82f6" radius={[4, 4, 0, 0]} />
+                      <Bar dataKey="count" fill="#3b82f6" radius={[4, 4, 0, 0]}>
+                        <LabelList dataKey="count" position="top" style={{ fontSize: 11, fontWeight: 600, fill: "hsl(var(--foreground))" }} />
+                      </Bar>
                     </BarChart>
                   </ResponsiveContainer>
                 </CardContent>
@@ -235,7 +268,7 @@ export default function AnalyticsPage() {
                         cx="50%"
                         cy="50%"
                         outerRadius={80}
-                        label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                        label={<PercentileBandLabel />}
                         labelLine={false}
                         fontSize={10}
                       >
@@ -259,7 +292,15 @@ export default function AnalyticsPage() {
                     <RadarChart data={subjectRadar} cx="50%" cy="50%" outerRadius={70}>
                       <PolarGrid stroke="hsl(var(--border))" />
                       <PolarAngleAxis dataKey="subject" tick={{ fontSize: 12 }} />
-                      <Radar name="Avg Score" dataKey="score" stroke="#8b5cf6" fill="#8b5cf6" fillOpacity={0.3} />
+                      <Radar
+                        name="Avg Score"
+                        dataKey="score"
+                        stroke="#8b5cf6"
+                        fill="#8b5cf6"
+                        fillOpacity={0.3}
+                        dot={{ r: 3, fill: "#8b5cf6" }}
+                        label={<RadarValueLabel />}
+                      />
                       <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }} />
                     </RadarChart>
                   </ResponsiveContainer>
@@ -341,14 +382,16 @@ export default function AnalyticsPage() {
                   <p className="text-xs font-semibold text-muted-foreground mb-3 uppercase tracking-wide">Avg Score by Branch</p>
                   <div className="h-48">
                     <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={perf.branch_comparison} margin={{ top: 5, right: 10, left: -20, bottom: 20 }}>
+                      <BarChart data={perf.branch_comparison} margin={{ top: 18, right: 10, left: -20, bottom: 20 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
                         <XAxis dataKey="branch_name" tick={{ fontSize: 10 }} angle={-30} textAnchor="end" />
                         <YAxis tick={{ fontSize: 11 }} />
                         <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }} />
                         <Bar dataKey="avg_math" name="Math" fill={SUBJECT_COLORS.Mathematics} stackId="a" />
                         <Bar dataKey="avg_physics" name="Physics" fill={SUBJECT_COLORS.Physics} stackId="a" />
-                        <Bar dataKey="avg_chemistry" name="Chemistry" fill={SUBJECT_COLORS.Chemistry} stackId="a" radius={[4, 4, 0, 0]} />
+                        <Bar dataKey="avg_chemistry" name="Chemistry" fill={SUBJECT_COLORS.Chemistry} stackId="a" radius={[4, 4, 0, 0]}>
+                          <LabelList dataKey="avg_score" position="top" formatter={(v: number) => Number(v).toFixed(1)} style={{ fontSize: 11, fontWeight: 600, fill: "hsl(var(--foreground))" }} />
+                        </Bar>
                         <Legend wrapperStyle={{ fontSize: 11, paddingTop: 8 }} />
                       </BarChart>
                     </ResponsiveContainer>
@@ -455,12 +498,14 @@ export default function AnalyticsPage() {
                       <div className="p-4 border-t">
                         <div className="h-36">
                           <ResponsiveContainer width="100%" height="100%">
-                            <BarChart data={rows} margin={{ top: 5, right: 10, left: -20, bottom: 0 }}>
+                            <BarChart data={rows} margin={{ top: 18, right: 10, left: -20, bottom: 0 }}>
                               <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
                               <XAxis dataKey="faculty_name" tick={{ fontSize: 11 }} />
                               <YAxis tick={{ fontSize: 11 }} />
                               <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }} />
-                              <Bar dataKey="avg_score" name="Avg Score" fill={SUBJECT_COLORS[subj]} radius={[4, 4, 0, 0]} />
+                              <Bar dataKey="avg_score" name="Avg Score" fill={SUBJECT_COLORS[subj]} radius={[4, 4, 0, 0]}>
+                                <LabelList dataKey="avg_score" position="top" formatter={(v: number) => Number(v).toFixed(1)} style={{ fontSize: 11, fontWeight: 600, fill: "hsl(var(--foreground))" }} />
+                              </Bar>
                             </BarChart>
                           </ResponsiveContainer>
                         </div>

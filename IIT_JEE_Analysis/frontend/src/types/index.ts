@@ -546,6 +546,7 @@ export interface StudentExamHistory {
   attempted: number;
   correct: number;
   wrong: number;
+  partial: number;
   unattempted: number;
   math_attempted: number;
   math_correct: number;
@@ -560,6 +561,17 @@ export interface StudentExamHistory {
   physics_faculty_names: string[];
   chemistry_faculty_names: string[];
   branch_name: string | null;
+}
+
+export interface StudentTopicMistakeRow {
+  subject: string;
+  topic: string;
+  sub_topic: string;
+  mistakes: number;
+  wrong: number;
+  partial: number;
+  blank: number;
+  lost_marks: number;
 }
 
 export interface StudentReportData {
@@ -595,6 +607,7 @@ export interface StudentReportData {
     physics: { avg_score: number; avg_pct: number; avg_correct: number; avg_wrong: number };
     chemistry: { avg_score: number; avg_pct: number; avg_correct: number; avg_wrong: number };
   };
+  topic_mistakes: StudentTopicMistakeRow[];
   best_subject: string | null;
   worst_subject: string | null;
   total_exams: number;
