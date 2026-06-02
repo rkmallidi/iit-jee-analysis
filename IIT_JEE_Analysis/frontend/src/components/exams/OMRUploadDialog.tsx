@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Upload, AlertCircle, CheckCircle2, AlertTriangle, Loader2 } from "lucide-react";
+import { Download, Upload, AlertCircle, CheckCircle2, AlertTriangle, Loader2 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -87,6 +87,46 @@ export default function OMRUploadDialog({ exam, branchId, branchName, open, onOp
       setStage("saving");
       saveMutation.mutate(validation.file_records);
     }
+  };
+
+  const csvCell = (value: unknown) => `"${String(value ?? "").replace(/"/g, '""')}"`;
+  const downloadCsv = (filename: string, headers: string[], rows: unknown[][]) => {
+    const csv = [headers, ...rows].map(row => row.map(csvCell).join(",")).join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  };
+
+  const downloadAbsentStudents = () => {
+    if (!validation) return;
+    const absent = validation.absent_students?.length
+      ? validation.absent_students
+      : validation.missing_students.map(omr_id => ({ omr_id, admission_no: "", name: "" }));
+    downloadCsv(
+      `${exam.exam_code}_${exam.paper}_${branchName}_absent_students.csv`,
+      ["OMR ID", "Admission No", "Name"],
+      absent.map(s => [s.omr_id, s.admission_no, s.name])
+    );
+  };
+
+  const downloadErrorRecords = () => {
+    if (!validation) return;
+    const rows = [
+      ...validation.errors.map(error => ["Validation Error", "", error]),
+      ...validation.duplicate_ids.map(id => ["Duplicate OMR ID", id, "Duplicate record in uploaded file"]),
+      ...validation.invalid_student_ids.map(id => ["Invalid OMR ID", id, "Student not enrolled or invalid answer data"]),
+    ];
+    downloadCsv(
+      `${exam.exam_code}_${exam.paper}_${branchName}_error_records.csv`,
+      ["Type", "OMR ID", "Details"],
+      rows
+    );
   };
 
   const handleClose = () => {
@@ -209,6 +249,23 @@ export default function OMRUploadDialog({ exam, branchId, branchName, open, onOp
               </Alert>
             )}
 
+            {(validation.errors.length > 0 || validation.duplicate_ids.length > 0 || validation.invalid_student_ids.length > 0 || validation.missing_students.length > 0) && (
+              <div className="flex flex-wrap gap-2">
+                {(validation.errors.length > 0 || validation.duplicate_ids.length > 0 || validation.invalid_student_ids.length > 0) && (
+                  <Button type="button" variant="outline" size="sm" className="h-8 text-xs" onClick={downloadErrorRecords}>
+                    <Download className="mr-1.5 h-3.5 w-3.5" />
+                    Error Records
+                  </Button>
+                )}
+                {validation.missing_students.length > 0 && (
+                  <Button type="button" variant="outline" size="sm" className="h-8 text-xs" onClick={downloadAbsentStudents}>
+                    <Download className="mr-1.5 h-3.5 w-3.5" />
+                    Absent Students
+                  </Button>
+                )}
+              </div>
+            )}
+
             {/* Missing students */}
             {validation.missing_students.length > 0 && (
               <Alert>
@@ -217,8 +274,14 @@ export default function OMRUploadDialog({ exam, branchId, branchName, open, onOp
                   <div className="space-y-1">
                     <p className="font-semibold text-sm">Absent Students ({validation.missing_students.length}):</p>
                     <div className="text-xs space-y-1 max-h-32 overflow-y-auto">
-                      {validation.missing_students.slice(0, 15).map((adm, i) => (
-                        <div key={i}>{adm}</div>
+                      {(validation.absent_students?.length
+                        ? validation.absent_students
+                        : validation.missing_students.map(omr_id => ({ omr_id, admission_no: "", name: "" }))
+                      ).slice(0, 15).map((student, i) => (
+                        <div key={i}>
+                          {student.admission_no || student.omr_id}
+                          {student.name ? ` - ${student.name}` : ""}
+                        </div>
                       ))}
                       {validation.missing_students.length > 15 && (
                         <div className="italic">... and {validation.missing_students.length - 15} more</div>

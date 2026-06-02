@@ -483,10 +483,8 @@ def student_report(
     best_subject  = max(subj_avgs, key=lambda k: subj_avgs[k]) if evals else None
     worst_subject = min(subj_avgs, key=lambda k: subj_avgs[k]) if evals else None
 
-    # Branch/section from most recent eval
-    branch_name  = evals[-1].branch_id and None  # resolved via branch names lookup
+    # Branch from each evaluation, with the most recent eval used for the student summary.
     branch_names = {b.id: b.name for b in db.scalars(select(Branch)).all()}
-    section_names = {s.id: s.name for s in db.scalars(select(Section)).all()}
 
     for h in history:
         ev = next((e for e in evals if e.exam_id == h["exam_id"]), None)

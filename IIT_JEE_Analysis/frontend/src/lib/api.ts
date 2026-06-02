@@ -1,17 +1,23 @@
 const BASE = (import.meta.env.VITE_API_URL as string) || "/api/v1";
 
+function handleUnauthorized(res: Response) {
+  if (res.status !== 401) return;
+  localStorage.removeItem("access_token");
+  localStorage.removeItem("refresh_token");
+  localStorage.removeItem("auth-store");
+  localStorage.removeItem("academic-year-store");
+  if (window.location.pathname !== "/login") {
+    window.location.assign("/login");
+  }
+}
+
 function authHeaders(headers: HeadersInit = {}) {
   const token = localStorage.getItem("access_token");
   return token ? { ...headers, Authorization: `Bearer ${token}` } : headers;
 }
 
-async function request(path: string, opts: RequestInit = {}) {
-  const url = path.startsWith("/") ? `${BASE}${path}` : `${BASE}/${path}`;
-  const res = await fetch(url, {
-    ...opts,
-    headers: authHeaders({ "Content-Type": "application/json", ...(opts.headers ?? {}) }),
-    credentials: "include",
-  });
+async function parseResponse(res: Response) {
+  handleUnauthorized(res);
   if (!res.ok) throw res;
   const text = await res.text();
   let data: any;
@@ -23,6 +29,28 @@ async function request(path: string, opts: RequestInit = {}) {
   return { data };
 }
 
+async function parseJsonResponse(res: Response, fallbackDetail = "Request failed") {
+  handleUnauthorized(res);
+  if (!res.ok) throw await res.json().catch(() => ({ detail: fallbackDetail }));
+  return { data: await res.json() };
+}
+
+async function parseBlobResponse(res: Response) {
+  handleUnauthorized(res);
+  if (!res.ok) throw res;
+  return { data: await res.blob() };
+}
+
+async function request(path: string, opts: RequestInit = {}) {
+  const url = path.startsWith("/") ? `${BASE}${path}` : `${BASE}/${path}`;
+  const res = await fetch(url, {
+    ...opts,
+    headers: authHeaders({ "Content-Type": "application/json", ...(opts.headers ?? {}) }),
+    credentials: "include",
+  });
+  return parseResponse(res);
+}
+
 export const login = (usernameOrData: any, password?: string) => {
   const data = typeof usernameOrData === "object" ? usernameOrData : { username: usernameOrData, password };
   return request("/auth/login", { method: "POST", body: JSON.stringify(data) });
@@ -30,13 +58,13 @@ export const login = (usernameOrData: any, password?: string) => {
 export const me = () => request("/auth/me");
 export const meContext = () => request("/auth/me/context");
 
-export const getUsers = () => request("/users");
+export const getUsers = (params?: Record<string, any>) => request(withQuery("/users", params));
 export const getRoles = () => request("/users/roles");
 export const createUser = (data: any) => request("/users", { method: "POST", body: JSON.stringify(data) });
 export const updateUser = (id: number, data: any) => request(`/users/${id}`, { method: "PATCH", body: JSON.stringify(data) });
 export const deleteUser = (id: number) => request(`/users/${id}`, { method: "DELETE" });
 export const downloadUsersTemplate = () =>
-  fetch(`${BASE}/users/upload/template`, { headers: authHeaders(), credentials: "include" }).then(async r => ({ data: await r.blob() }));
+  fetch(`${BASE}/users/upload/template`, { headers: authHeaders(), credentials: "include" }).then(parseBlobResponse);
 export const uploadUsersExcel = (file: File) => {
   const formData = new FormData();
   formData.append("file", file);
@@ -45,10 +73,7 @@ export const uploadUsersExcel = (file: File) => {
     headers: authHeaders(),
     body: formData,
     credentials: "include",
-  }).then(async r => {
-    if (!r.ok) throw await r.json().catch(() => ({ detail: "Upload failed" }));
-    return { data: await r.json() };
-  });
+  }).then(r => parseJsonResponse(r, "Upload failed"));
 };
 export const uploadUserAvatar = (id: number, file: File) => {
   const formData = new FormData();
@@ -58,7 +83,7 @@ export const uploadUserAvatar = (id: number, file: File) => {
     headers: authHeaders(),
     body: formData,
     credentials: "include",
-  }).then(async r => ({ data: await r.json() }));
+  }).then(parseJsonResponse);
 };
 
 export const getAcademicYears = () => request("/academic-years");
@@ -107,12 +132,12 @@ export const uploadStudentsExcel = (file: File) => {
     headers: authHeaders(),
     body: formData,
     credentials: "include",
-  }).then(async r => ({ data: await r.json() }));
+  }).then(parseJsonResponse);
 };
 export const downloadStudentsTemplate = () =>
-  fetch(`${BASE}/students/upload/template`, { headers: authHeaders(), credentials: "include" }).then(async r => ({ data: await r.blob() }));
+  fetch(`${BASE}/students/upload/template`, { headers: authHeaders(), credentials: "include" }).then(parseBlobResponse);
 export const downloadSectionTemplate = () =>
-  fetch(`${BASE}/students/upload/section-template`, { headers: authHeaders(), credentials: "include" }).then(async r => ({ data: await r.blob() }));
+  fetch(`${BASE}/students/upload/section-template`, { headers: authHeaders(), credentials: "include" }).then(parseBlobResponse);
 export const uploadSectionExcel = (file: File, academicYearId: number) => {
   const formData = new FormData();
   formData.append("file", file);
@@ -121,7 +146,7 @@ export const uploadSectionExcel = (file: File, academicYearId: number) => {
     headers: authHeaders(),
     body: formData,
     credentials: "include",
-  }).then(async r => ({ data: await r.json() }));
+  }).then(parseJsonResponse);
 };
 export const assignStudentSection = (studentId: number, branchSectionId: number, academicYearId: number) =>
   request(`/students/${studentId}/section`, {
@@ -152,7 +177,7 @@ export const getExamQuestions = (examId: number) => request(`/exams/${examId}/qu
 export const updateExamQuestion = (examId: number, id: number, data: any) =>
   request(`/exams/${examId}/questions/${id}`, { method: "PATCH", body: JSON.stringify(data) });
 export const downloadExamQuestionTemplate = (examId: number) =>
-  fetch(`${BASE}/exams/${examId}/questions/upload/template`, { headers: authHeaders(), credentials: "include" }).then(async r => ({ data: await r.blob() }));
+  fetch(`${BASE}/exams/${examId}/questions/upload/template`, { headers: authHeaders(), credentials: "include" }).then(parseBlobResponse);
 export const uploadExamQuestionsExcel = (examId: number, file: File) => {
   const formData = new FormData();
   formData.append("file", file);
@@ -161,7 +186,7 @@ export const uploadExamQuestionsExcel = (examId: number, file: File) => {
     headers: authHeaders(),
     body: formData,
     credentials: "include",
-  }).then(async r => ({ data: await r.json() }));
+  }).then(parseJsonResponse);
 };
 export const clearExamQuestions = (examId: number) => request(`/exams/${examId}/questions`, { method: "DELETE" });
 
@@ -173,7 +198,7 @@ export const validateOMRFile = (examId: number, branchId: number, file: File) =>
     headers: authHeaders(),
     body: formData,
     credentials: "include",
-  }).then(async r => ({ data: await r.json() }));
+  }).then(parseJsonResponse);
 };
 export const saveOMRResults = (examId: number, branchId: number, records: any[], summary: any = {}) =>
   request(`/exams/${examId}/results/save`, {
@@ -181,7 +206,8 @@ export const saveOMRResults = (examId: number, branchId: number, records: any[],
     body: JSON.stringify({ exam_id: examId, branch_id: branchId, records, ...summary }),
   });
 
-export const updateMyTheme = (data: any) => request("/users/me/theme", { method: "PATCH", body: JSON.stringify(data) });
+export const updateMyTheme = (data: any) =>
+  request("/users/me/theme", { method: "PATCH", body: JSON.stringify({ theme_prefs: data }) });
 
 export const getEvaluatedExams = (academicYearId?: number) =>
   request(withQuery("/analytics/evaluated-exams", { academic_year_id: academicYearId }));

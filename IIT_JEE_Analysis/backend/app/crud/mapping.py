@@ -1,7 +1,7 @@
 """CRUD for all mapping tables."""
 from typing import Optional, Sequence
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session, selectinload
 
 from app.models.academic_year import AcademicYear
@@ -24,6 +24,41 @@ from app.models.user import User, UserRole
 
 
 # -------- Query helpers --------
+
+def _db_subject_labels(db: Session) -> set[str] | None:
+    if db.bind and db.bind.dialect.name == "postgresql":
+        return set(db.execute(text("""
+            SELECT e.enumlabel
+            FROM pg_enum e
+            JOIN pg_type t ON t.oid = e.enumtypid
+            WHERE t.typname = 'subjectname_enum'
+        """)).scalars().all())
+    return None
+
+
+def _subject_variants(db: Session, subject: SubjectName) -> list[SubjectName]:
+    variants = (
+        [SubjectName.MATHS, SubjectName.LEGACY_MATHS]
+        if subject in (SubjectName.MATHS, SubjectName.LEGACY_MATHS)
+        else [subject]
+    )
+    labels = _db_subject_labels(db)
+    if labels is None:
+        return variants
+    supported = [variant for variant in variants if variant.value in labels]
+    return supported or [subject]
+
+
+def _preferred_subject(db: Session, subject: SubjectName) -> SubjectName:
+    if subject not in (SubjectName.MATHS, SubjectName.LEGACY_MATHS):
+        return subject
+    labels = _db_subject_labels(db)
+    if labels is not None:
+        if SubjectName.MATHS.value in labels:
+            return SubjectName.MATHS
+        if SubjectName.LEGACY_MATHS.value in labels:
+            return SubjectName.LEGACY_MATHS
+    return SubjectName.MATHS
 
 def _dean_branch_query():
     return select(DeanBranch).options(
@@ -80,12 +115,13 @@ def get_faculty_subject_by_id(db: Session, id: int) -> Optional[FacultySubject]:
 def set_faculty_subject(db: Session, user_id: int, subject: SubjectName) -> FacultySubject:
     existing = db.scalar(
         select(FacultySubject).where(
-            FacultySubject.user_id == user_id, FacultySubject.subject == subject
+            FacultySubject.user_id == user_id,
+            FacultySubject.subject.in_(_subject_variants(db, subject)),
         )
     )
     if existing:
         return existing
-    obj = FacultySubject(user_id=user_id, subject=subject)
+    obj = FacultySubject(user_id=user_id, subject=_preferred_subject(db, subject))
     db.add(obj); db.commit(); db.refresh(obj)
     return obj
 
@@ -293,7 +329,7 @@ def assign_faculty_section(
     allowed_subject = db.scalar(
         select(FacultySubject).where(
             FacultySubject.user_id == user_id,
-            FacultySubject.subject == subject,
+            FacultySubject.subject.in_(_subject_variants(db, subject)),
         )
     )
     if not allowed_subject:
@@ -301,7 +337,7 @@ def assign_faculty_section(
     duplicate = db.scalar(
         select(FacultySection).where(
             FacultySection.branch_section_id == branch_section_id,
-            FacultySection.subject == subject,
+            FacultySection.subject.in_(_subject_variants(db, subject)),
             FacultySection.user_id == user_id,
         )
     )
@@ -313,7 +349,7 @@ def assign_faculty_section(
         branch_id=bs.branch_id,
         class_id=bs.class_id,
         section_id=bs.section_id,
-        subject=subject,
+        subject=_preferred_subject(db, subject),
     )
     db.add(obj); db.commit()
     return db.scalar(_faculty_section_query().where(FacultySection.id == obj.id))

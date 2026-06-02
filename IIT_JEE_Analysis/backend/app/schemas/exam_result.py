@@ -58,12 +58,19 @@ class OMRValidationRecord(BaseModel):
     answers: list[int | str]  # int for SCQ/INT, str for MCQ ("2|4") or DECIMAL ("3.14")
 
 
+class OMRAbsentStudent(BaseModel):
+    omr_id: str
+    admission_no: str
+    name: str
+
+
 class OMRValidationSummary(BaseModel):
     """Summary of OMR file validation."""
     valid_count: int
     duplicate_ids: list[str]
     invalid_student_ids: list[str]
     missing_students: list[str]  # Enrolled but not in file
+    absent_students: list[OMRAbsentStudent] = []
     errors: list[str]
     file_records: list[OMRValidationRecord]
     program_id: int

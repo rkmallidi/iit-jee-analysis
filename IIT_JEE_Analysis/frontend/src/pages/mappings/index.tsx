@@ -37,6 +37,28 @@ const TABS: { id: Tab; label: string; icon: React.ElementType }[] = [
   { id: "overview", label: "Overview", icon: Eye },
 ];
 
+async function getErrorMessage(error: unknown, fallback: string) {
+  if (error instanceof Response) {
+    const text = await error.text();
+    if (!text) return fallback;
+    try {
+      const body = JSON.parse(text);
+      return body?.detail || fallback;
+    } catch {
+      return text;
+    }
+  }
+  return fallback;
+}
+
+function normalizeSubject(subject: string): SubjectName | null {
+  const value = subject.toLowerCase();
+  if (value === "mathematics" || value === "maths") return "Mathematics";
+  if (value === "physics") return "Physics";
+  if (value === "chemistry") return "Chemistry";
+  return null;
+}
+
 // ---------- Main Page ----------
 export default function MappingsPage() {
   const { selectedYear, setSelectedYear } = useAcademicYearStore();
@@ -125,7 +147,7 @@ function BranchDashboardTab() {
   const { data: programs = [] } = useQuery({ queryKey: ["programs"], queryFn: () => getPrograms().then(r => r.data), staleTime: STALE });
   const { data: classes = [] }  = useQuery({ queryKey: ["classes"],  queryFn: () => getClasses().then(r => r.data),  staleTime: STALE });
   const { data: sections = [] } = useQuery({ queryKey: ["sections"], queryFn: () => getSections().then(r => r.data), staleTime: STALE });
-  const { data: users = [] }    = useQuery({ queryKey: ["users"],    queryFn: () => getUsers().then(r => r.data),    staleTime: STALE });
+  const { data: users = [] }    = useQuery({ queryKey: ["users"],    queryFn: () => getUsers({ limit: 1000 }).then(r => r.data), staleTime: STALE });
   const { data: bsections = [] } = useQuery({
     queryKey: ["branch-sections", yearId],
     queryFn: () => getBranchSections({ academic_year_id: yearId }).then(r => r.data),
@@ -273,10 +295,27 @@ function BranchDashboardTab() {
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["branch-sections", yearId] }); toast({ title: "Slot removed" }); },
   });
   const assignFaculty = useMutation({
-    mutationFn: ({ userId, bsId, subject }: { userId: number; bsId: number; subject: SubjectName }) =>
-      assignFacultySection(userId, bsId, subject),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["faculty-sections"] }); toast({ title: "Faculty assigned" }); },
-    onError: () => toast({ title: "Error assigning faculty", variant: "destructive" }),
+    mutationFn: async ({ userId, bsId, subject }: { userId: number; bsId: number; subject: SubjectName }) => {
+      await addFacultySubject(userId, subject);
+      return assignFacultySection(userId, bsId, subject);
+    },
+    onSuccess: result => {
+      const saved = result?.data;
+      if (saved) {
+        qc.setQueryData<any[]>(["faculty-sections"], current => {
+          const rows = Array.isArray(current) ? current : [];
+          return [saved, ...rows.filter(row => row.id !== saved.id)];
+        });
+      }
+      qc.invalidateQueries({ queryKey: ["faculty-sections"] });
+      qc.invalidateQueries({ queryKey: ["users"] });
+      toast({ title: "Faculty assigned" });
+    },
+    onError: async error => toast({
+      title: "Error assigning faculty",
+      description: await getErrorMessage(error, "Please check that this faculty has the selected subject enabled."),
+      variant: "destructive",
+    }),
   });
   const removeFaculty = useMutation({
     mutationFn: (id: number) => removeFacultySection(id),
@@ -296,7 +335,8 @@ function BranchDashboardTab() {
   const staffedSlotIds = useMemo(() => {
     const subjsByBsId: Record<number, Set<string>> = {};
     for (const fm of facultyMaps) {
-      (subjsByBsId[fm.branch_section_id] ??= new Set()).add(fm.subject);
+      const subject = normalizeSubject(fm.subject);
+      if (subject) (subjsByBsId[fm.branch_section_id] ??= new Set()).add(subject);
     }
     return new Set(
       Object.entries(subjsByBsId)
@@ -645,7 +685,7 @@ function BranchDashboardTab() {
                                                 </button>
                                               )}
                                               <span className={`ml-auto text-[11px] font-medium ${slotFull ? "text-emerald-600" : "text-amber-600"}`}>
-                                                {slotFull ? "✓ staffed" : `${SUBJECTS.filter(subj => (facultyByBsId[bs.id] ?? []).some(fm => fm.subject === subj)).length}/3 subjects`}
+                                                {slotFull ? "✓ staffed" : `${SUBJECTS.filter(subj => (facultyByBsId[bs.id] ?? []).some(fm => normalizeSubject(fm.subject) === subj)).length}/3 subjects`}
                                               </span>
                                               <button
                                                 onClick={() => setPendingAction({ fn: () => deleteSlot.mutate(bs.id), title: "Delete Section Slot", description: `Delete slot "${sec?.name ?? `S${bs.section_id}`}"? This will also remove all faculty assignments for this slot.` })}
@@ -659,10 +699,11 @@ function BranchDashboardTab() {
                                             <div className="divide-y">
                                               {SUBJECTS.map(subj => {
                                                 const slotFms = facultyByBsId[bs.id] ?? [];
-                                                const subjFms = slotFms.filter(f => f.subject === subj);
+                                                const subjFms = slotFms.filter(f => normalizeSubject(f.subject) === subj);
                                                 const assignedIds = new Set(subjFms.map(f => f.user_id));
                                                 const available = faculty.filter(u =>
-                                                  !assignedIds.has(u.id) && (u.faculty_subjects ?? []).includes(subj)
+                                                  !assignedIds.has(u.id) &&
+                                                  (u.faculty_subjects ?? []).some(subject => normalizeSubject(subject) === subj)
                                                 );
                                                 const hasAny = subjFms.length > 0;
                                                 const subjColor = subj === "Mathematics" ? "text-blue-600" : subj === "Physics" ? "text-purple-600" : "text-green-600";
@@ -678,24 +719,24 @@ function BranchDashboardTab() {
                                                   ? "bg-purple-200"
                                                   : "bg-green-200";
                                                 return (
-                                                  <div key={subj} className="flex items-center gap-2 px-2.5 py-1.5">
+                                                  <div key={subj} className="grid grid-cols-[76px_minmax(0,1fr)_80px] items-center gap-2 px-2.5 py-1.5">
                                                     {/* Subject label + status dot */}
-                                                    <div className="flex items-center gap-1.5 shrink-0 min-w-[66px]">
+                                                    <div className="flex items-center gap-1.5 min-w-0">
                                                       <div className={`h-2 w-2 rounded-full shrink-0 ${hasAny ? "bg-emerald-400" : "bg-amber-300"}`} />
-                                                      <span className={`text-xs font-semibold ${subjColor}`}>{subjShort}</span>
+                                                      <span className={`truncate text-xs font-semibold ${subjColor}`}>{subjShort}</span>
                                                     </div>
                                                     {/* Faculty chips */}
-                                                    <div className="ml-auto flex items-center justify-end gap-1 flex-1 min-w-0">
+                                                    <div className="flex min-h-7 min-w-0 items-center gap-1 overflow-hidden">
                                                       {subjFms.length > 1 && (
-                                                        <span className={`inline-flex items-center rounded-full border px-1.5 py-0 text-[10px] font-semibold ${chipCls}`}>
+                                                        <span className={`inline-flex shrink-0 items-center rounded-full border px-1.5 py-0 text-[10px] font-semibold ${chipCls}`}>
                                                           {subjFms.length}
                                                         </span>
                                                       )}
                                                       {subjFms.map(fm => {
-                                                        const u = userById.get(fm.user_id);
+                                                        const u = userById.get(fm.user_id) ?? fm.faculty;
                                                         const chipWidth = subjFms.length >= 2 ? "max-w-[110px]" : "max-w-[150px]";
                                                         return (
-                                                          <span key={fm.id} className={`group/chip inline-flex items-center gap-1 rounded-full border text-[11px] font-medium px-2 py-0.5 ${chipCls} ${chipWidth}`}>
+                                                          <span key={fm.id} className={`group/chip inline-flex min-w-0 items-center gap-1 rounded-full border text-[11px] font-medium px-2 py-0.5 ${chipCls} ${chipWidth}`}>
                                                             <span className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[9px] font-bold ${avatarCls}`}>
                                                               {(u?.full_name ?? "?").slice(0, 2).toUpperCase()}
                                                             </span>
@@ -709,18 +750,19 @@ function BranchDashboardTab() {
                                                           </span>
                                                         );
                                                       })}
-                                                      {/* + Add dropdown */}
-                                                      <Select onValueChange={v => assignFaculty.mutate({ userId: +v, bsId: bs.id, subject: subj })}>
-                                                        <SelectTrigger className="h-6 w-[84px] px-2 text-xs border-dashed text-muted-foreground gap-0.5 [&>svg]:hidden">
-                                                          <span className="text-primary/60 font-semibold">+ Add</span>
-                                                        </SelectTrigger>
-                                                        <SelectContent>
-                                                          {available.length === 0
-                                                            ? <div className="px-3 py-2 text-xs text-muted-foreground">No available {subjShort} faculty</div>
-                                                            : available.map(u => <SelectItem key={u.id} value={String(u.id)}>{u.full_name}</SelectItem>)}
-                                                        </SelectContent>
-                                                      </Select>
                                                     </div>
+                                                    {/* + Add dropdown */}
+                                                    <Select onValueChange={v => assignFaculty.mutate({ userId: +v, bsId: bs.id, subject: subj })}>
+                                                      <SelectTrigger className="h-7 w-20 justify-center rounded-full border-primary/20 bg-primary/5 px-2 text-xs font-semibold text-primary hover:bg-primary/10 focus:ring-1 focus:ring-primary/30 focus:ring-offset-0 [&>svg]:hidden">
+                                                        <Plus className="mr-1 h-3 w-3" />
+                                                        <span>Add</span>
+                                                      </SelectTrigger>
+                                                      <SelectContent align="end" className="min-w-[180px]">
+                                                        {available.length === 0
+                                                          ? <div className="px-3 py-2 text-xs text-muted-foreground">No available {subjShort} faculty</div>
+                                                          : available.map(u => <SelectItem key={u.id} value={String(u.id)}>{u.full_name}</SelectItem>)}
+                                                      </SelectContent>
+                                                    </Select>
                                                   </div>
                                                 );
                                               })}
@@ -919,12 +961,13 @@ const SUBJECT_COLORS: Record<SubjectName, string> = {
 
 // ---------- Overview ----------
 function OverviewTab() {
+  const qc = useQueryClient();
   const { selectedYear } = useAcademicYearStore();
   const yearId = selectedYear?.id;
 
   const { data: branches = [] } = useQuery({ queryKey: ["branches"], queryFn: () => getBranches().then(r => r.data) });
   const { data: programs = [] } = useQuery({ queryKey: ["programs"], queryFn: () => getPrograms().then(r => r.data) });
-  const { data: users = [] } = useQuery({ queryKey: ["users"], queryFn: () => getUsers().then(r => r.data) });
+  const { data: users = [] } = useQuery({ queryKey: ["users"], queryFn: () => getUsers({ limit: 1000 }).then(r => r.data) });
   const faculty = users.filter(u => u.roles.some(r => r.name === "Faculty"));
 
   const [mode, setMode] = useState<"faculty" | "program" | "branch">("faculty");
@@ -941,7 +984,7 @@ function OverviewTab() {
     setLoading(true);
     try {
       const fn = mode === "faculty" ? getFacultyOverview : mode === "program" ? getProgramOverview : getBranchOverview;
-      const res = await fn(+selectedId, yearId);
+      const res = await fn(+selectedId, { academic_year_id: yearId });
       setData(res.data);
     } catch {
       toast({ title: "Failed to load overview", variant: "destructive" });
@@ -960,6 +1003,7 @@ function OverviewTab() {
       } else {
         await addFacultySubject(+selectedId, subject);
       }
+      qc.invalidateQueries({ queryKey: ["users"] });
       await load();
     } catch {
       toast({ title: "Failed to update subject", variant: "destructive" });

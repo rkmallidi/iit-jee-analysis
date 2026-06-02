@@ -23,6 +23,7 @@ if TYPE_CHECKING:
 
 class SubjectName(str, enum.Enum):
     MATHS = "Mathematics"
+    LEGACY_MATHS = "Maths"
     CHEMISTRY = "Chemistry"
     PHYSICS = "Physics"
 

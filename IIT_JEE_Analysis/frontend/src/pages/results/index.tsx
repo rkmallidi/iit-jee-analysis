@@ -44,7 +44,7 @@ function StudentsDialog({ section, branchName, onClose }: StudentsDialogProps) {
           {section.student_count === 0 ? (
             <p className="text-sm text-muted-foreground italic text-center py-8">No students assigned.</p>
           ) : (
-            <table className="w-full text-xs">
+            <table className="compact-table w-full text-xs">
               <thead>
                 <tr className="border-b">
                   <th className="text-left py-2 px-3 text-muted-foreground font-semibold">#</th>

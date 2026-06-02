@@ -515,7 +515,7 @@ export default function UsersPage() {
 
   const { data: users = [], isLoading } = useQuery<User[]>({
     queryKey: ["users"],
-    queryFn: () => getUsers().then(r => r.data),
+    queryFn: () => getUsers({ limit: 1000 }).then(r => r.data),
   });
   const { data: roles = [] } = useQuery<Role[]>({
     queryKey: ["roles"],

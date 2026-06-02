@@ -610,7 +610,7 @@ function ExamCard({ le, progMap, classMap, branches, students, questions, allQue
                 <ChevronRight className="h-3 w-3 ml-auto opacity-0 group-hover/branches:opacity-100 transition-opacity" />
               </button>
             </PopoverTrigger>
-            <PopoverContent className="w-60 p-2" align="start">
+            <PopoverContent className="w-72 p-2" align="start">
               <div className="text-xs font-semibold text-muted-foreground mb-2 px-1">Branches & Student Count</div>
               <div className="space-y-0.5 max-h-52 overflow-y-auto">
                 {activeBranches.map(b => {
@@ -619,12 +619,17 @@ function ExamCard({ le, progMap, classMap, branches, students, questions, allQue
                     s.section_mapping?.branch_section?.program_id === le.rep.program_id
                   ).length;
                   return (
-                    <div key={b.id} className="flex items-center justify-between rounded-md px-2 py-1.5 hover:bg-muted/60 text-xs">
-                      <div>
-                        <div className="font-medium">{b.name}</div>
+                    <div key={b.id} className="grid grid-cols-[minmax(0,1fr)_56px] items-center gap-3 rounded-md px-2 py-1.5 hover:bg-muted/60 text-xs">
+                      <div className="min-w-0">
+                        <div className="font-medium leading-snug">{b.name}</div>
                         <div className="text-[10px] text-muted-foreground">{b.code}</div>
                       </div>
-                      <Badge variant="secondary" className="text-[10px] h-5 px-1.5">{count} stu</Badge>
+                      <Badge variant="secondary" className="h-8 w-14 justify-center rounded-md px-1 py-0 text-center leading-none">
+                        <span className="flex flex-col items-center gap-0.5">
+                          <span className="text-[11px] font-bold leading-none">{count}</span>
+                          <span className="text-[9px] font-medium leading-none text-muted-foreground">students</span>
+                        </span>
+                      </Badge>
                     </div>
                   );
                 })}
@@ -755,11 +760,11 @@ function PaperRow({ paper, paperQuestions, onClick, canEditMas, yearId }: {
         )}
 
         {hasDiff && (
-          <div className="ml-auto flex items-center gap-1.5 shrink-0">
-            <span className="text-[10px] text-muted-foreground/50 font-medium">Overall</span>
+          <div className="ml-auto flex min-w-0 items-center gap-1.5">
+            <span className="hidden text-[10px] text-muted-foreground/50 font-medium sm:inline">Overall</span>
             <Stars avg={overallAvg} size={10} />
             <span className={cn(
-              "text-[10px] font-semibold",
+              "whitespace-nowrap text-[10px] font-semibold",
               overallAvg < 1.5 ? "text-emerald-600" :
               overallAvg < 2.5 ? "text-amber-600" :
               overallAvg < 3.5 ? "text-orange-600" : "text-red-700"
@@ -771,15 +776,15 @@ function PaperRow({ paper, paperQuestions, onClick, canEditMas, yearId }: {
       </button>
 
       {/* Row 2 — per-subject difficulty + MAS inline */}
-      <div className="flex items-center gap-3 px-3 pb-2 pt-0.5">
+      <div className="space-y-1 px-3 pb-2 pt-0.5">
         {/* Subject difficulty stars */}
         {hasDiff && (
-          <div className="flex items-center gap-2">
+          <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
             {Object.entries(SUBJ_META).map(([subj, { labelClass }]) => {
               if (!subjCnt[subj]) return null;
               const a = subjSum[subj] / subjCnt[subj];
               return (
-                <div key={subj} className="flex items-center gap-0.5">
+                <div key={subj} className="flex shrink-0 items-center gap-0.5">
                   <span className={cn("font-semibold text-[10px]", labelClass)}>{subj.slice(0, 4)}</span>
                   <Stars avg={a} size={9} />
                 </div>
@@ -789,12 +794,12 @@ function PaperRow({ paper, paperQuestions, onClick, canEditMas, yearId }: {
         )}
 
         {/* MAS values */}
-        <div className="ml-auto flex items-center gap-1.5">
-          <span className="text-[10px] font-bold text-amber-600 uppercase tracking-wide">MAS</span>
+        <div className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5">
+          <span className="shrink-0 text-[10px] font-bold text-amber-600 uppercase tracking-wide">MAS</span>
           {Object.entries(SUBJ_META).map(([subj, { short, color }]) => {
             const val = subj === "Mathematics" ? paper.mas_mathematics : subj === "Physics" ? paper.mas_physics : paper.mas_chemistry;
             return (
-              <span key={subj} className="flex items-center gap-0.5 text-[10px]">
+              <span key={subj} className="flex shrink-0 items-center gap-0.5 text-[10px]">
                 <span className={cn("font-bold", color)}>{short}</span>
                 <span className={val != null ? "font-semibold text-foreground" : "text-muted-foreground/40 italic"}>
                   {val ?? "—"}
@@ -806,7 +811,7 @@ function PaperRow({ paper, paperQuestions, onClick, canEditMas, yearId }: {
           {canEditMas && (
             <Popover open={masOpen} onOpenChange={setMasOpen}>
               <PopoverTrigger asChild>
-                <button className="flex items-center gap-0.5 text-[10px] text-amber-600 hover:text-amber-800 shrink-0 ml-0.5">
+                <button className="ml-auto flex h-5 w-5 shrink-0 items-center justify-center rounded text-amber-600 hover:bg-amber-50 hover:text-amber-800">
                   <Pencil className="h-2.5 w-2.5" />
                 </button>
               </PopoverTrigger>

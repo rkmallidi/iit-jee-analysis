@@ -955,7 +955,7 @@ export default function ExamQuestionsPage() {
             </div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full text-[11px]">
+              <table className="compact-table w-full text-[11px]">
                 <thead>
                   <tr className="border-b bg-muted/30 h-8">
                     <th className="text-left px-2 py-1 font-semibold text-muted-foreground w-8">#</th>

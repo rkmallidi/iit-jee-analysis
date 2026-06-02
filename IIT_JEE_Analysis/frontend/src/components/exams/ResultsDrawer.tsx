@@ -234,7 +234,7 @@ export default function ResultsDrawer({ examId, examCode, paper, mas, open, onCl
           )}
 
           {data && filtered.length > 0 && (
-            <table className="text-xs border-collapse w-max min-w-full">
+            <table className="compact-table text-xs border-collapse w-max min-w-full">
               <thead className="sticky top-0 z-20 bg-slate-50 border-b-2 border-slate-200">
                 {/* Row 1 — column headers */}
                 <tr className="border-b border-slate-200">

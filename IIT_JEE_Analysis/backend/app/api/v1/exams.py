@@ -16,7 +16,7 @@ from app.models.student import Student
 from app.models.student_section import StudentSection
 from app.models.user import RoleName
 from app.schemas.exam import ExamCreate, ExamOut, ExamUpdate, ExamQuestionOut, ExamQuestionUpdate, ExamQuestionUploadResult, ExamDetailOut
-from app.schemas.exam_result import OMRValidationRecord, OMRValidationSummary, OMRUploadConfirm, ExamResultsDetail, StudentResult, QuestionResult
+from app.schemas.exam_result import OMRAbsentStudent, OMRValidationRecord, OMRValidationSummary, OMRUploadConfirm, ExamResultsDetail, StudentResult, QuestionResult
 
 router = APIRouter(prefix="/exams", tags=["exams"])
 admin_only = Depends(require_roles(RoleName.ADMIN))
@@ -1177,14 +1177,24 @@ def validate_omr_file(
         # Find missing students
         missing = set(enrolled_map.keys()) - submitted_omr_ids
         missing_list = sorted(list(missing))
+        absent_students = [
+            OMRAbsentStudent(
+                omr_id=omr_id,
+                admission_no=enrolled_map[omr_id].admission_no,
+                name=enrolled_map[omr_id].name,
+            )
+            for omr_id in missing_list
+        ]
     else:
         missing_list = []
+        absent_students = []
 
     return OMRValidationSummary(
         valid_count=len(records) - len(set(invalid_student_ids)),
         duplicate_ids=sorted(list(duplicate_ids)),
         invalid_student_ids=sorted(list(set(invalid_student_ids))),
         missing_students=missing_list,
+        absent_students=absent_students,
         errors=errors,
         file_records=records,
         program_id=exam.program_id,

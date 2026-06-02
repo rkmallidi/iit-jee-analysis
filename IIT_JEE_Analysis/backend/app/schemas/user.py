@@ -58,7 +58,14 @@ class UserUpdate(BaseModel):
 
 
 class UserThemeUpdate(BaseModel):
-    theme_prefs: dict[str, Any]
+    theme_prefs: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="before")
+    @classmethod
+    def accept_flat_theme_payload(cls, data: Any) -> Any:
+        if isinstance(data, dict) and "theme_prefs" not in data:
+            return {"theme_prefs": data}
+        return data
 
 
 class UserOut(UserBase):
@@ -76,7 +83,10 @@ class UserOut(UserBase):
         if hasattr(data, "user_roles"):
             data.__dict__.setdefault("roles", [ur.role for ur in data.user_roles])
         if hasattr(data, "faculty_subjects"):
-            data.__dict__["faculty_subjects"] = [fs.subject for fs in data.faculty_subjects]
+            data.__dict__["faculty_subjects"] = [
+                fs.subject if hasattr(fs, "subject") else fs
+                for fs in data.faculty_subjects
+            ]
         if hasattr(data, "theme_prefs") and isinstance(data.theme_prefs, str):
             try:
                 data.__dict__["theme_prefs"] = json.loads(data.theme_prefs)

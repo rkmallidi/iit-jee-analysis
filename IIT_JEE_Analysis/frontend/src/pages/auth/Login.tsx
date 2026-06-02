@@ -7,6 +7,7 @@ import { Eye, EyeOff, Loader2 } from "lucide-react";
 
 import { login, me, meContext } from "@/lib/api";
 import { useAuthStore } from "@/store/auth";
+import { useBrandStore } from "@/store/brand";
 import { useThemeStore } from "@/store/theme";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -23,6 +24,7 @@ type FormData = z.infer<typeof schema>;
 export default function LoginPage() {
   const navigate = useNavigate();
   const { setTokens, setUser, setContext } = useAuthStore();
+  const { title, subtitle, logoUrl } = useBrandStore();
   const { applyTheme } = useThemeStore();
   const [showPwd, setShowPwd] = useState(false);
 
@@ -38,14 +40,46 @@ export default function LoginPage() {
       setUser(user);
       setContext(ctx.branch_ids);
       if (user.theme_prefs) {
-        const { setMode, setPrimaryColor, setRadius } = useThemeStore.getState();
+        const {
+          setMode,
+          setPrimaryColor,
+          setRadius,
+          setSidebarScheme,
+          setSidebarColors,
+          setSidebarFontSize,
+          setAppFontFamily,
+          setAppFontSize,
+        } = useThemeStore.getState();
         if (user.theme_prefs.theme) setMode(user.theme_prefs.theme as "light" | "dark" | "system");
         if (user.theme_prefs.primaryColor) setPrimaryColor(user.theme_prefs.primaryColor as string);
         if (user.theme_prefs.radius) setRadius(user.theme_prefs.radius as string);
+        if (user.theme_prefs.appFontFamily) setAppFontFamily(user.theme_prefs.appFontFamily as string);
+        if (user.theme_prefs.appFontSize) setAppFontSize(user.theme_prefs.appFontSize as string);
+        if (user.theme_prefs.sidebarBackground) {
+          setSidebarScheme({
+            background: user.theme_prefs.sidebarBackground as string,
+            foreground: (user.theme_prefs.sidebarForeground as string) || "210 40% 98%",
+            muted: (user.theme_prefs.sidebarMuted as string) || "215 20% 67%",
+            border: (user.theme_prefs.sidebarBorder as string) || (user.theme_prefs.sidebarAccent as string) || "217 33% 17%",
+            hover: (user.theme_prefs.sidebarHover as string) || (user.theme_prefs.sidebarAccent as string) || "217 33% 17%",
+            hoverForeground: (user.theme_prefs.sidebarHoverForeground as string) || (user.theme_prefs.sidebarForeground as string) || "210 40% 98%",
+            active: (user.theme_prefs.sidebarActive as string) || (user.theme_prefs.sidebarAccent as string) || "221 83% 23%",
+            activeForeground: (user.theme_prefs.sidebarActiveForeground as string) || (user.theme_prefs.sidebarForeground as string) || "210 40% 98%",
+          });
+        }
+        setSidebarColors({
+          ...(user.theme_prefs.sidebarMuted ? { muted: user.theme_prefs.sidebarMuted as string } : {}),
+          ...(user.theme_prefs.sidebarBorder ? { border: user.theme_prefs.sidebarBorder as string } : {}),
+          ...(user.theme_prefs.sidebarHover ? { hover: user.theme_prefs.sidebarHover as string } : {}),
+          ...(user.theme_prefs.sidebarHoverForeground ? { hoverForeground: user.theme_prefs.sidebarHoverForeground as string } : {}),
+          ...(user.theme_prefs.sidebarActive ? { active: user.theme_prefs.sidebarActive as string } : {}),
+          ...(user.theme_prefs.sidebarActiveForeground ? { activeForeground: user.theme_prefs.sidebarActiveForeground as string } : {}),
+        });
+        if (user.theme_prefs.sidebarFontSize) setSidebarFontSize(user.theme_prefs.sidebarFontSize as string);
       }
       applyTheme();
-      const isOperator = user.roles.some(r => r.name === "Operator") &&
-        !user.roles.some(r => ["Admin", "Dean", "Principal", "Vice-Principal"].includes(r.name));
+      const isOperator = user.roles.some((r: { name: string }) => r.name === "Operator") &&
+                         !user.roles.some((r: { name: string }) => ["Admin", "Dean", "Principal", "Vice-Principal"].includes(r.name));
       navigate(isOperator ? "/results" : "/");
     } catch {
       toast({ title: "Login failed", description: "Invalid username or password.", variant: "destructive" });
@@ -59,11 +93,13 @@ export default function LoginPage() {
         {/* Logo / Brand */}
         <div className="flex flex-col items-center gap-3">
           <div className="h-20 w-20 rounded-2xl overflow-hidden shadow-lg ring-1 ring-border/50">
-            <img src="/sc-logo.png.jpeg" alt="Sri Chaitanya" className="h-full w-full object-cover" />
+            <img src={logoUrl} alt={title} className="h-full w-full object-cover" />
           </div>
           <div className="text-center">
-            <h1 className="text-2xl font-bold tracking-tight">Sri Chaitanya</h1>
-            <p className="text-sm text-muted-foreground mt-0.5">Kavuri Hills — IIT JEE Analysis Platform</p>
+            <h1 className="text-3xl tracking-wide" style={{ fontFamily: "Impact, Haettenschweiler, 'Arial Narrow Bold', sans-serif" }}>
+              {title}
+            </h1>
+            <p className="text-sm text-muted-foreground mt-0.5">{subtitle} - IIT JEE Analysis Platform</p>
           </div>
         </div>
 

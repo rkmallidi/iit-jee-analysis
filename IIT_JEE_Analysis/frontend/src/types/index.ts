@@ -225,11 +225,18 @@ export interface OMRValidationRecord {
   answers: (number | string)[];
 }
 
+export interface OMRAbsentStudent {
+  omr_id: string;
+  admission_no: string;
+  name: string;
+}
+
 export interface OMRValidationSummary {
   valid_count: number;
   duplicate_ids: string[];
   invalid_student_ids: string[];
   missing_students: string[];
+  absent_students?: OMRAbsentStudent[];
   errors: string[];
   file_records: OMRValidationRecord[];
   program_id: number;

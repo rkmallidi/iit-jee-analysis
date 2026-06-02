@@ -106,7 +106,7 @@ function BranchCard({ branchName, students, mas, onClick }: BranchCardProps) {
             {/* Subject breakdown: Avg / Top / MAS / Above MAS */}
             <div>
               <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide mb-2">Subject Breakdown</p>
-              <table className="w-full text-[11px] border rounded-lg overflow-hidden">
+              <table className="compact-table w-full text-[11px] border rounded-lg overflow-hidden">
                 <thead>
                   <tr className="bg-slate-100 text-muted-foreground">
                     <th className="text-left px-2 py-1.5 font-semibold w-12"></th>
